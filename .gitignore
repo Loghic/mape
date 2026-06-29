@@ -26,3 +26,16 @@ __pycache__/
 .venv/
 *.egg-info/
 dist/
+
+# Editor / language-server caches (clangd, etc.)
+.cache/
+.clangd/
+*.idx
+
+# IDE settings
+.vscode/
+.idea/
+
+# OS cruft
+.DS_Store
+Thumbs.db
