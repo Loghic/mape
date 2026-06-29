@@ -18,15 +18,21 @@ fn main() {
     // Configure + build + install the FFI library (which links the core).
     // `cmake::Config::build()` runs configure, build, then `cmake --install`.
     let dst = cmake::Config::new(&cpp_root)
-        .define("MAPE_BUILD_TESTS", "OFF")     // no test binaries in the GUI build
+        .define("MAPE_BUILD_TESTS", "OFF") // no test binaries in the GUI build
         .define("MAPE_ENABLE_WARNINGS", "OFF") // keep dependency builds quiet
         .build_target("mape_ffi")
         .build();
 
     // The `cmake` crate installs into `<OUT_DIR>`. Libraries land in lib/ (or
     // lib64/ on some distros); add both search paths to be safe.
-    println!("cargo:rustc-link-search=native={}", dst.join("lib").display());
-    println!("cargo:rustc-link-search=native={}", dst.join("lib64").display());
+    println!(
+        "cargo:rustc-link-search=native={}",
+        dst.join("lib").display()
+    );
+    println!(
+        "cargo:rustc-link-search=native={}",
+        dst.join("lib64").display()
+    );
     // When only the target is built (not installed), the artifact lives under
     // the build tree; add that too as a fallback.
     println!(

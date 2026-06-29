@@ -134,7 +134,8 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ gcov lcov
+          # gcov ships with g++; lcov is the report tool.
+          sudo apt-get install -y g++ lcov
 
       - name: Build C++ tests with coverage instrumentation
         run: |

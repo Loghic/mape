@@ -77,10 +77,10 @@ struct App {
     smile_expiries: Vec<String>,
     smile_expiry: Option<String>,
     smile_type: OptionType,
-    smile_points: Vec<[f64; 2]>,   // (strike, implied vol)
+    smile_points: Vec<[f64; 2]>, // (strike, implied vol)
     smile_skipped: usize,
     smile_spot: f64,
-    smile_asof: String,            // snapshot timestamp shown for context
+    smile_asof: String, // snapshot timestamp shown for context
 }
 
 impl App {
@@ -136,19 +136,16 @@ impl App {
         ];
         for path in candidates {
             match DataStore::open(&path) {
-                Ok(store) => {
-                    match store.tickers() {
-                        Ok(t) if !t.is_empty() => {
-                            self.smile_tickers = t;
-                            self.store = Some(store);
-                            self.db_status =
-                                format!("loaded {}", path.display());
-                            return;
-                        }
-                        Ok(_) => self.db_status = "market.db is empty".into(),
-                        Err(e) => self.db_status = e,
+                Ok(store) => match store.tickers() {
+                    Ok(t) if !t.is_empty() => {
+                        self.smile_tickers = t;
+                        self.store = Some(store);
+                        self.db_status = format!("loaded {}", path.display());
+                        return;
                     }
-                }
+                    Ok(_) => self.db_status = "market.db is empty".into(),
+                    Err(e) => self.db_status = e,
+                },
                 Err(e) => self.db_status = e,
             }
         }
@@ -168,7 +165,9 @@ impl App {
     /// Recompute the single-instrument price and Greeks from current inputs.
     fn recompute(&mut self) {
         let q = self.quote();
-        self.price = self.engine.price(self.model, self.opt_type, self.exercise, q);
+        self.price = self
+            .engine
+            .price(self.model, self.opt_type, self.exercise, q);
         self.greeks = self.engine.greeks(self.opt_type, q);
         self.status = match self.price {
             Some(_) => String::new(),
@@ -213,12 +212,14 @@ impl App {
         // Log-spaced sample sizes: steps for binomial, paths for Monte Carlo.
         let sizes: Vec<f64> = match self.conv_model {
             Model::Binomial => (1..=10).map(|k| (1u64 << k) as f64).collect(), // 2..1024
-            _ => (1..=10).map(|k| (1000u64 << (k - 1)) as f64).collect(),       // 1k..512k
+            _ => (1..=10).map(|k| (1000u64 << (k - 1)) as f64).collect(),      // 1k..512k
         };
-        match self.engine.convergence(self.conv_model, self.opt_type, q, &sizes) {
+        match self
+            .engine
+            .convergence(self.conv_model, self.opt_type, q, &sizes)
+        {
             Ok(prices) => {
-                self.conv_series =
-                    sizes.iter().zip(prices).map(|(&x, y)| [x, y]).collect();
+                self.conv_series = sizes.iter().zip(prices).map(|(&x, y)| [x, y]).collect();
                 self.status = String::new();
             }
             Err(e) => self.status = format!("Convergence failed: {:?}", e),
@@ -240,7 +241,10 @@ impl App {
 
         let snap = match store.latest_snapshot(ticker) {
             Ok(s) => s,
-            Err(e) => { self.db_status = e; return; }
+            Err(e) => {
+                self.db_status = e;
+                return;
+            }
         };
         self.smile_spot = snap.spot;
         self.smile_asof = snap.fetched_at.clone();
@@ -251,7 +255,10 @@ impl App {
         };
         let chain = match store.chain(ticker, expiry, type_str) {
             Ok(c) => c,
-            Err(e) => { self.db_status = e; return; }
+            Err(e) => {
+                self.db_status = e;
+                return;
+            }
         };
 
         for q in &chain {
@@ -306,70 +313,93 @@ impl eframe::App for App {
 impl App {
     fn input_controls(&mut self, ui: &mut egui::Ui) -> bool {
         let mut changed = false;
-        egui::Grid::new("inputs").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
-            ui.label("Spot");
-            changed |= ui.add(egui::DragValue::new(&mut self.spot).speed(0.5)).changed();
-            ui.end_row();
-            ui.label("Strike");
-            changed |= ui.add(egui::DragValue::new(&mut self.strike).speed(0.5)).changed();
-            ui.end_row();
-            ui.label("Rate");
-            changed |= ui
-                .add(egui::DragValue::new(&mut self.rate).speed(0.001).max_decimals(4))
-                .changed();
-            ui.end_row();
-            ui.label("Volatility");
-            changed |= ui
-                .add(egui::DragValue::new(&mut self.vol).speed(0.005).max_decimals(4))
-                .changed();
-            ui.end_row();
-            ui.label("Maturity (yrs)");
-            changed |= ui
-                .add(egui::DragValue::new(&mut self.maturity).speed(0.05).max_decimals(4))
-                .changed();
-            ui.end_row();
-            ui.label("Dividend yield");
-            changed |= ui
-                .add(egui::DragValue::new(&mut self.dividend).speed(0.001).max_decimals(4))
-                .changed();
-            ui.end_row();
+        egui::Grid::new("inputs")
+            .num_columns(2)
+            .spacing([12.0, 6.0])
+            .show(ui, |ui| {
+                ui.label("Spot");
+                changed |= ui
+                    .add(egui::DragValue::new(&mut self.spot).speed(0.5))
+                    .changed();
+                ui.end_row();
+                ui.label("Strike");
+                changed |= ui
+                    .add(egui::DragValue::new(&mut self.strike).speed(0.5))
+                    .changed();
+                ui.end_row();
+                ui.label("Rate");
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut self.rate)
+                            .speed(0.001)
+                            .max_decimals(4),
+                    )
+                    .changed();
+                ui.end_row();
+                ui.label("Volatility");
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut self.vol)
+                            .speed(0.005)
+                            .max_decimals(4),
+                    )
+                    .changed();
+                ui.end_row();
+                ui.label("Maturity (yrs)");
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut self.maturity)
+                            .speed(0.05)
+                            .max_decimals(4),
+                    )
+                    .changed();
+                ui.end_row();
+                ui.label("Dividend yield");
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut self.dividend)
+                            .speed(0.001)
+                            .max_decimals(4),
+                    )
+                    .changed();
+                ui.end_row();
 
-            ui.label("Model");
-            egui::ComboBox::from_id_source("model")
-                .selected_text(format!("{:?}", self.model))
-                .show_ui(ui, |ui| {
-                    for m in [Model::BlackScholes, Model::Binomial, Model::MonteCarlo] {
-                        changed |= ui
-                            .selectable_value(&mut self.model, m, format!("{:?}", m))
-                            .changed();
-                    }
-                });
-            ui.end_row();
+                ui.label("Model");
+                egui::ComboBox::from_id_source("model")
+                    .selected_text(format!("{:?}", self.model))
+                    .show_ui(ui, |ui| {
+                        for m in [Model::BlackScholes, Model::Binomial, Model::MonteCarlo] {
+                            changed |= ui
+                                .selectable_value(&mut self.model, m, format!("{:?}", m))
+                                .changed();
+                        }
+                    });
+                ui.end_row();
 
-            ui.label("Type");
-            egui::ComboBox::from_id_source("type")
-                .selected_text(format!("{:?}", self.opt_type))
-                .show_ui(ui, |ui| {
-                    for t in [OptionType::Call, OptionType::Put] {
-                        changed |= ui
-                            .selectable_value(&mut self.opt_type, t, format!("{:?}", t))
-                            .changed();
-                    }
-                });
-            ui.end_row();
+                ui.label("Type");
+                egui::ComboBox::from_id_source("type")
+                    .selected_text(format!("{:?}", self.opt_type))
+                    .show_ui(ui, |ui| {
+                        for t in [OptionType::Call, OptionType::Put] {
+                            changed |= ui
+                                .selectable_value(&mut self.opt_type, t, format!("{:?}", t))
+                                .changed();
+                        }
+                    });
+                ui.end_row();
 
-            ui.label("Exercise");
-            egui::ComboBox::from_id_source("exercise")
-                .selected_text(format!("{:?}", self.exercise))
-                .show_ui(ui, |ui| {
-                    for e in [Exercise::European, Exercise::American] {
-                        changed |= ui
-                            .selectable_value(&mut self.exercise, e, format!("{:?}", e))
-                            .changed();
-                    }
-                });
-            ui.end_row();
-        });
+                ui.label("Exercise");
+                egui::ComboBox::from_id_source("exercise")
+                    .selected_text(format!("{:?}", self.exercise))
+                    .show_ui(ui, |ui| {
+                        for e in [Exercise::European, Exercise::American] {
+                            changed |= ui
+                                .selectable_value(&mut self.exercise, e, format!("{:?}", e))
+                                .changed();
+                        }
+                    });
+                ui.end_row();
+            });
         changed
     }
 
@@ -383,17 +413,20 @@ impl App {
             Some(p) => {
                 ui.heading(format!("Price: {:.4}", p));
                 ui.add_space(6.0);
-                egui::Grid::new("greeks").num_columns(2).spacing([12.0, 4.0]).show(ui, |ui| {
-                    ui.label("Delta");
-                    ui.label(format!("{:.4}", self.greeks.delta));
-                    ui.end_row();
-                    ui.label("Gamma");
-                    ui.label(format!("{:.4}", self.greeks.gamma));
-                    ui.end_row();
-                    ui.label("Vega");
-                    ui.label(format!("{:.4}", self.greeks.vega));
-                    ui.end_row();
-                });
+                egui::Grid::new("greeks")
+                    .num_columns(2)
+                    .spacing([12.0, 4.0])
+                    .show(ui, |ui| {
+                        ui.label("Delta");
+                        ui.label(format!("{:.4}", self.greeks.delta));
+                        ui.end_row();
+                        ui.label("Gamma");
+                        ui.label(format!("{:.4}", self.greeks.gamma));
+                        ui.end_row();
+                        ui.label("Vega");
+                        ui.label(format!("{:.4}", self.greeks.vega));
+                        ui.end_row();
+                    });
                 ui.add_space(4.0);
                 ui.weak("Greeks are closed-form (Black-Scholes), European-style.");
             }
@@ -404,8 +437,10 @@ impl App {
     }
 
     fn portfolio_tab(&mut self, ui: &mut egui::Ui) {
-        ui.label("Shared market: spot, rate, vol, dividend from the Single tab. \
-                  Each row is a call/put at its own strike, same maturity.");
+        ui.label(
+            "Shared market: spot, rate, vol, dividend from the Single tab. \
+                  Each row is a call/put at its own strike, same maturity.",
+        );
         self.input_controls(ui);
         ui.separator();
 
@@ -418,7 +453,11 @@ impl App {
                 self.book_strikes.push(next);
             }
             if let Some(ms) = self.last_reprice_ms {
-                ui.weak(format!("{} instruments in {:.2} ms (threaded)", self.book_strikes.len(), ms));
+                ui.weak(format!(
+                    "{} instruments in {:.2} ms (threaded)",
+                    self.book_strikes.len(),
+                    ms
+                ));
             }
         });
         ui.add_space(6.0);
@@ -427,24 +466,29 @@ impl App {
             ui.colored_label(egui::Color32::LIGHT_RED, &self.status);
         }
 
-        egui::Grid::new("book").num_columns(2).striped(true).show(ui, |ui| {
-            ui.strong("Strike");
-            ui.strong("Price");
-            ui.end_row();
-            for (i, k) in self.book_strikes.iter().enumerate() {
-                ui.monospace(format!("{:.2}", k));
-                match self.book_prices.get(i) {
-                    Some(p) => ui.monospace(format!("{:.4}", p)),
-                    None => ui.weak("—"),
-                };
+        egui::Grid::new("book")
+            .num_columns(2)
+            .striped(true)
+            .show(ui, |ui| {
+                ui.strong("Strike");
+                ui.strong("Price");
                 ui.end_row();
-            }
-        });
+                for (i, k) in self.book_strikes.iter().enumerate() {
+                    ui.monospace(format!("{:.2}", k));
+                    match self.book_prices.get(i) {
+                        Some(p) => ui.monospace(format!("{:.4}", p)),
+                        None => ui.weak("—"),
+                    };
+                    ui.end_row();
+                }
+            });
     }
 
     fn convergence_tab(&mut self, ui: &mut egui::Ui) {
-        ui.label("Numerical models converge to the Black-Scholes closed form as \
-                  resolution increases (binomial: steps; Monte Carlo: paths).");
+        ui.label(
+            "Numerical models converge to the Black-Scholes closed form as \
+                  resolution increases (binomial: steps; Monte Carlo: paths).",
+        );
         ui.horizontal(|ui| {
             ui.label("Model:");
             ui.selectable_value(&mut self.conv_model, Model::Binomial, "Binomial");
@@ -464,13 +508,11 @@ impl App {
         }
 
         let reference = self.conv_reference;
-        let model_points: PlotPoints =
-            self.conv_series.iter().map(|p| [p[0], p[1]]).collect();
+        let model_points: PlotPoints = self.conv_series.iter().map(|p| [p[0], p[1]]).collect();
         // Flat reference line spanning the x-range of the series.
         let x_min = self.conv_series.first().map(|p| p[0]).unwrap_or(0.0);
         let x_max = self.conv_series.last().map(|p| p[0]).unwrap_or(1.0);
-        let ref_points: PlotPoints =
-            vec![[x_min, reference], [x_max, reference]].into();
+        let ref_points: PlotPoints = vec![[x_min, reference], [x_max, reference]].into();
 
         Plot::new("convergence_plot")
             .legend(Legend::default())
@@ -486,8 +528,10 @@ impl App {
     }
 
     fn smile_tab(&mut self, ui: &mut egui::Ui) {
-        ui.label("Implied volatility per strike, inverted from real market \
-                  option prices. Each point solves Black-Scholes backwards.");
+        ui.label(
+            "Implied volatility per strike, inverted from real market \
+                  option prices. Each point solves Black-Scholes backwards.",
+        );
 
         if self.store.is_none() {
             ui.add_space(8.0);
@@ -496,8 +540,10 @@ impl App {
             ui.label("To populate market data:");
             ui.monospace("pip install yfinance");
             ui.monospace("python scripts/fetch_data.py AAPL MSFT");
-            ui.weak("Then restart the app (run it from the repo root so it \
-                     finds data/market.db).");
+            ui.weak(
+                "Then restart the app (run it from the repo root so it \
+                     finds data/market.db).",
+            );
             return;
         }
 
@@ -517,8 +563,7 @@ impl App {
                             self.smile_ticker = Some(t.clone());
                             // Refresh expiries for the newly chosen ticker.
                             if let Some(store) = &self.store {
-                                self.smile_expiries =
-                                    store.expiries(t).unwrap_or_default();
+                                self.smile_expiries = store.expiries(t).unwrap_or_default();
                                 self.smile_expiry = self.smile_expiries.first().cloned();
                             }
                             dirty = true;
@@ -568,8 +613,7 @@ impl App {
         }
 
         let points: PlotPoints = self.smile_points.iter().map(|p| [p[0], p[1]]).collect();
-        let line_points: PlotPoints =
-            self.smile_points.iter().map(|p| [p[0], p[1]]).collect();
+        let line_points: PlotPoints = self.smile_points.iter().map(|p| [p[0], p[1]]).collect();
         let spot = self.smile_spot;
 
         Plot::new("smile_plot")
@@ -579,9 +623,7 @@ impl App {
             .height(360.0)
             .show(ui, |plot_ui| {
                 plot_ui.line(Line::new(line_points).name("implied vol"));
-                plot_ui.points(
-                    Points::new(points).radius(3.0_f32).name("strikes"),
-                );
+                plot_ui.points(Points::new(points).radius(3.0_f32).name("strikes"));
                 // Vertical marker at spot (ATM) helps read the smile.
                 if spot > 0.0 {
                     let y0 = self

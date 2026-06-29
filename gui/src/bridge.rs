@@ -280,13 +280,7 @@ impl Engine {
 
     /// Price a single option. Returns `None` if the C side reported NaN
     /// (invalid input).
-    pub fn price(
-        &self,
-        model: Model,
-        ty: OptionType,
-        exercise: Exercise,
-        q: Quote,
-    ) -> Option<f64> {
+    pub fn price(&self, model: Model, ty: OptionType, exercise: Exercise, q: Quote) -> Option<f64> {
         // SAFETY: handle is a valid, non-null pointer owned by self.
         let v = unsafe {
             ffi::mape_price(
@@ -315,16 +309,34 @@ impl Engine {
         unsafe {
             Greeks {
                 delta: ffi::mape_delta(
-                    self.handle, ty as i32, q.spot, q.strike, q.rate, q.vol,
-                    q.maturity, q.dividend,
+                    self.handle,
+                    ty as i32,
+                    q.spot,
+                    q.strike,
+                    q.rate,
+                    q.vol,
+                    q.maturity,
+                    q.dividend,
                 ),
                 gamma: ffi::mape_gamma(
-                    self.handle, ty as i32, q.spot, q.strike, q.rate, q.vol,
-                    q.maturity, q.dividend,
+                    self.handle,
+                    ty as i32,
+                    q.spot,
+                    q.strike,
+                    q.rate,
+                    q.vol,
+                    q.maturity,
+                    q.dividend,
                 ),
                 vega: ffi::mape_vega(
-                    self.handle, ty as i32, q.spot, q.strike, q.rate, q.vol,
-                    q.maturity, q.dividend,
+                    self.handle,
+                    ty as i32,
+                    q.spot,
+                    q.strike,
+                    q.rate,
+                    q.vol,
+                    q.maturity,
+                    q.dividend,
                 ),
             }
         }
@@ -383,11 +395,22 @@ impl Engine {
         // SAFETY: valid handle; scalar args; side-effect free.
         let v = unsafe {
             ffi::mape_ad_greek(
-                self.handle, greek as i32, ty as i32, q.spot, q.strike, q.rate,
-                q.vol, q.maturity, q.dividend,
+                self.handle,
+                greek as i32,
+                ty as i32,
+                q.spot,
+                q.strike,
+                q.rate,
+                q.vol,
+                q.maturity,
+                q.dividend,
             )
         };
-        if v.is_nan() { None } else { Some(v) }
+        if v.is_nan() {
+            None
+        } else {
+            Some(v)
+        }
     }
 
     /// Price an exotic, path-dependent option via parallel Monte Carlo.
@@ -406,12 +429,26 @@ impl Engine {
         // SAFETY: valid handle; scalar args.
         let v = unsafe {
             ffi::mape_price_exotic(
-                self.handle, exotic as i32, ty as i32, q.spot, q.strike,
-                q.rate, q.vol, q.maturity, q.dividend, barrier,
-                barrier_kind as i32, steps, paths,
+                self.handle,
+                exotic as i32,
+                ty as i32,
+                q.spot,
+                q.strike,
+                q.rate,
+                q.vol,
+                q.maturity,
+                q.dividend,
+                barrier,
+                barrier_kind as i32,
+                steps,
+                paths,
             )
         };
-        if v.is_nan() { None } else { Some(v) }
+        if v.is_nan() {
+            None
+        } else {
+            Some(v)
+        }
     }
 
     /// Convergence series: price the chosen model at each `sample_size`
@@ -428,8 +465,17 @@ impl Engine {
         // SAFETY: sample_sizes valid for n reads; out has room for n writes.
         let status = unsafe {
             ffi::mape_convergence(
-                self.handle, model as i32, ty as i32, q.spot, q.strike, q.rate,
-                q.vol, q.maturity, q.dividend, sample_sizes.as_ptr(), n,
+                self.handle,
+                model as i32,
+                ty as i32,
+                q.spot,
+                q.strike,
+                q.rate,
+                q.vol,
+                q.maturity,
+                q.dividend,
+                sample_sizes.as_ptr(),
+                n,
                 out.as_mut_ptr(),
             )
         };
@@ -457,11 +503,21 @@ impl Engine {
         // SAFETY: valid handle; scalar args; side-effect free.
         let v = unsafe {
             ffi::mape_implied_vol(
-                self.handle, ty as i32, market_price, spot, strike, rate,
-                maturity, dividend,
+                self.handle,
+                ty as i32,
+                market_price,
+                spot,
+                strike,
+                rate,
+                maturity,
+                dividend,
             )
         };
-        if v.is_nan() { None } else { Some(v) }
+        if v.is_nan() {
+            None
+        } else {
+            Some(v)
+        }
     }
 
     /// Present value of a fixed-coupon bond (continuous discounting at `rate`).
@@ -474,10 +530,13 @@ impl Engine {
         rate: f64,
     ) -> Option<f64> {
         // SAFETY: valid handle; scalar args.
-        let v = unsafe {
-            ffi::mape_price_bond(self.handle, face, coupon, maturity, frequency, rate)
-        };
-        if v.is_nan() { None } else { Some(v) }
+        let v =
+            unsafe { ffi::mape_price_bond(self.handle, face, coupon, maturity, frequency, rate) };
+        if v.is_nan() {
+            None
+        } else {
+            Some(v)
+        }
     }
 
     /// Present value of an FX forward (long, per unit foreign notional).
@@ -492,10 +551,19 @@ impl Engine {
         // SAFETY: valid handle; scalar args.
         let v = unsafe {
             ffi::mape_price_fx_forward(
-                self.handle, spot, strike, maturity, domestic_rate, foreign_rate,
+                self.handle,
+                spot,
+                strike,
+                maturity,
+                domestic_rate,
+                foreign_rate,
             )
         };
-        if v.is_nan() { None } else { Some(v) }
+        if v.is_nan() {
+            None
+        } else {
+            Some(v)
+        }
     }
 
     /// Fair forward FX rate by covered interest parity.
@@ -508,11 +576,13 @@ impl Engine {
     ) -> Option<f64> {
         // SAFETY: valid handle; scalar args.
         let v = unsafe {
-            ffi::mape_fx_forward_rate(
-                self.handle, spot, maturity, domestic_rate, foreign_rate,
-            )
+            ffi::mape_fx_forward_rate(self.handle, spot, maturity, domestic_rate, foreign_rate)
         };
-        if v.is_nan() { None } else { Some(v) }
+        if v.is_nan() {
+            None
+        } else {
+            Some(v)
+        }
     }
 }
 
