@@ -1,0 +1,21 @@
+[package]
+name = "pricing-gui"
+version = "0.1.0"
+edition = "2021"
+description = "egui desktop front-end for the multi-asset pricing engine"
+publish = false
+
+[[bin]]
+name = "pricing-gui"
+path = "src/main.rs"
+
+[dependencies]
+# Pin in your lockfile; these baseline versions are known to work together.
+eframe = "0.27"
+egui = "0.27"
+egui_plot = "0.27"   # convergence + smile charts
+rusqlite = { version = "0.31", features = ["bundled"] }  # reads data/market.db
+
+[build-dependencies]
+# Drives the C++ CMake build and tells Cargo where to find libmape.
+cmake = "0.1"

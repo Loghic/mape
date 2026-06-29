@@ -1,0 +1,28 @@
+# CMake out-of-source build dir
+/build/
+build_mape_tests
+
+# Editor compilation database (symlinked from build/)
+/compile_commands.json
+
+# Loose test binaries from direct g++/clang builds
+/mape_tests
+/mape_tsan
+*.dSYM/
+*.o
+*.a
+
+# Rust / Cargo
+/gui/target/
+target/
+
+# Generated market-data cache (populated by the fetcher)
+/data/market.db
+/data/market.db-wal
+/data/market.db-shm
+__pycache__/
+
+# Python / uv (commit uv.lock; ignore the local venv and build artifacts)
+.venv/
+*.egg-info/
+dist/
