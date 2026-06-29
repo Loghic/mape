@@ -1,5 +1,15 @@
 # Multi-Asset Pricing Engine
 
+[![CI](https://github.com/Loghic/mape/actions/workflows/ci.yml/badge.svg)](https://github.com/Loghic/mape/actions/workflows/ci.yml)
+[![Static analysis](https://github.com/Loghic/mape/actions/workflows/static-analysis.yml/badge.svg)](https://github.com/Loghic/mape/actions/workflows/static-analysis.yml)
+[![codecov](https://codecov.io/gh/Loghic/mape/branch/main/graph/badge.svg)](https://codecov.io/gh/Loghic/mape)
+
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)](https://en.cppreference.com/w/cpp/20)
+[![Rust](https://img.shields.io/badge/Rust-2021-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![CMake](https://img.shields.io/badge/CMake-%E2%89%A53.20-064F8C?logo=cmake&logoColor=white)](https://cmake.org/)
+[![uv](https://img.shields.io/badge/packaging-uv-DE5FE9?logo=astral&logoColor=white)](https://docs.astral.sh/uv/)
+
 A quantitative pricing engine in **C++20** with a Rust/egui desktop GUI and an
 optional real-market-data layer. The C++ core is the "heart" (see
 [`plan.md`](plan.md)); a stable C ABI exposes it to Rust, and a small Python

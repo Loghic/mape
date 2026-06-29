@@ -1,0 +1,172 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --- C++ core + FFI: configure, build (warnings as errors), run ctest ----
+  cpp:
+    name: C++ build + ctest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ ninja-build
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DMAPE_BUILD_TESTS=ON
+          -DMAPE_ENABLE_WARNINGS=ON
+          -DCMAKE_CXX_FLAGS="-Werror"
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  # --- Sanitizers: the concurrency code must stay clean -------------------
+  sanitizers:
+    name: Sanitizers (${{ matrix.san }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - san: address,undefined
+            flags: "-fsanitize=address,undefined -fno-sanitize-recover=all"
+          - san: thread
+            flags: "-fsanitize=thread"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++
+
+      - name: Build core tests under ${{ matrix.san }}
+        run: >
+          g++ -std=c++20 -O1 -g ${{ matrix.flags }} -pthread
+          -Icore/include core/tests/test_main.cpp -o mape_tests_san
+
+      - name: Run
+        env:
+          # Fail the job on any sanitizer finding.
+          ASAN_OPTIONS: halt_on_error=1:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+          TSAN_OPTIONS: halt_on_error=1
+        run: ./mape_tests_san
+
+  # --- Rust GUI: build (compiles C++ via build.rs), clippy, fmt ------------
+  rust:
+    name: Rust build + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps (egui needs X11/GL headers to build)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ \
+            libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libxkbcommon-dev libssl-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            gui/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('gui/Cargo.lock') }}
+
+      - name: Format check
+        run: cargo fmt --manifest-path gui/Cargo.toml --check
+
+      - name: Clippy (warnings as errors)
+        run: cargo clippy --manifest-path gui/Cargo.toml --release -- -D warnings
+
+      - name: Build
+        run: cargo build --manifest-path gui/Cargo.toml --release
+
+  # --- Python data fetcher: lint with ruff via uv -------------------------
+  python:
+    name: Python lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Lint
+        run: uvx ruff check scripts/fetch_data.py
+
+      - name: Format check
+        run: uvx ruff format --check scripts/fetch_data.py
+
+  # --- Code coverage: instrument the C++ tests, upload to Codecov ---------
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ gcov lcov
+
+      - name: Build C++ tests with coverage instrumentation
+        run: |
+          # Header-only core: instrument the two test drivers, which exercise
+          # the whole core (test_main.cpp) and the C ABI (c_smoke_test.c).
+          g++ -std=c++20 -O0 -g --coverage -pthread \
+            -Icore/include core/tests/test_main.cpp -o core_tests
+          g++ -std=c++20 -O0 -g --coverage -pthread \
+            -Icore/include -Iffi/include -c ffi/src/mape_c_api.cpp -o mape_c_api.o
+          ar rcs libmape.a mape_c_api.o
+          gcc -std=c11 -g --coverage -Iffi/include \
+            -c ffi/tests/c_smoke_test.c -o c_smoke_test.o
+          g++ --coverage c_smoke_test.o -L. -lmape -pthread -o ffi_c_test
+
+      - name: Run instrumented tests
+        run: |
+          ./core_tests
+          ./ffi_c_test
+
+      - name: Capture coverage with lcov
+        run: |
+          lcov --capture --directory . --output-file coverage.info \
+            --rc lcov_branch_coverage=1 --ignore-errors mismatch,negative
+          # Keep only this project's sources; drop system/STL headers.
+          lcov --extract coverage.info "$(pwd)/core/*" "$(pwd)/ffi/*" \
+            --output-file coverage.info --ignore-errors unused
+          lcov --list coverage.info
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.info
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

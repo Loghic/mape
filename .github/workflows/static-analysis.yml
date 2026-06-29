@@ -1,0 +1,101 @@
+name: Static analysis
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: static-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --- clang-tidy over the FFI translation unit (pulls in the whole core) --
+  clang-tidy:
+    name: clang-tidy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build clang-tidy
+
+      - name: Configure (emit compile_commands.json)
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DMAPE_BUILD_TESTS=ON
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Run clang-tidy
+        run: |
+          # Lint the FFI source (which includes the entire header-only core)
+          # and the test driver, using the generated compilation database.
+          clang-tidy -p build \
+            ffi/src/mape_c_api.cpp \
+            core/tests/test_main.cpp
+
+  # --- cppcheck: a second, independent analyzer ---------------------------
+  cppcheck:
+    name: cppcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck
+        run: >
+          cppcheck
+          --std=c++20
+          --enable=warning,performance,portability
+          --inline-suppr
+          --error-exitcode=1
+          --suppress=missingIncludeSystem
+          --suppress=checkersReport
+          -I core/include
+          -I ffi/include
+          core ffi
+
+  # --- CodeQL: semantic security/quality scanning (C++ and Python) --------
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # upload results to the Security tab
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [cpp, python]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Install C++ toolchain
+        if: matrix.language == 'cpp'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++
+
+      # CodeQL needs to observe a real build for compiled languages.
+      - name: Build (cpp)
+        if: matrix.language == 'cpp'
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMAPE_BUILD_TESTS=ON
+          cmake --build build -j
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}

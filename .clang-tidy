@@ -1,0 +1,30 @@
+# clang-tidy configuration for the C++ pricing core + FFI.
+#
+# Focus on bug-prone patterns, correctness, and modern C++ usage. We disable a
+# few checks that fight this codebase's deliberate style: the FFI layer must use
+# C-style interfaces and pointer arithmetic at the boundary, and the header-only
+# core uses short local names (S, K, r, T) that match financial notation.
+Checks: >
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  modernize-*,
+  cppcoreguidelines-*,
+  readability-*,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-avoid-do-while,
+  -cppcoreguidelines-owning-memory,
+  -bugprone-easily-swappable-parameters
+
+# Promote findings to warnings only; the CI job decides whether to fail.
+WarningsAsErrors: ''
+
+# Lint our headers, not system or third-party ones.
+HeaderFilterRegex: 'core/include/mape/.*'
+
+FormatStyle: none

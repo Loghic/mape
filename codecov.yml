@@ -1,0 +1,25 @@
+# Codecov configuration. See https://docs.codecov.com/docs/codecovyml-reference
+coverage:
+  status:
+    project:
+      default:
+        # Report coverage but don't fail the build on small drops; this is a
+        # library where some FFI error-handling branches are hard to exercise.
+        target: auto
+        threshold: 5%
+        informational: true
+    patch:
+      default:
+        informational: true
+
+# Don't count test drivers or generated dirs toward coverage.
+ignore:
+  - "core/tests/**"
+  - "ffi/tests/**"
+  - "gui/**"
+  - "scripts/**"
+  - "build/**"
+
+comment:
+  layout: "reach, diff, files"
+  require_changes: false

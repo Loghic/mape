@@ -26,3 +26,12 @@ force-include = { "scripts/fetch_data.py" = "fetch_data.py" }
 [tool.uv]
 # Dev-only conveniences can go here later (e.g. ruff, pytest). Kept minimal.
 package = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+# A pragmatic set: pyflakes (F), pycodestyle (E/W), isort (I), bugbear (B),
+# and pyupgrade (UP). The fetcher is small; this keeps it tidy without fuss.
+select = ["E", "W", "F", "I", "B", "UP"]

@@ -18,6 +18,7 @@ Usage (plain Python):
 yfinance has no SLA and its schema drifts; everything here is best-effort and
 defensive. A failure on one ticker or expiry is logged and skipped, not fatal.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -85,7 +86,7 @@ def init_db(path: str, schema_path: str) -> sqlite3.Connection:
         os.makedirs(parent, exist_ok=True)
     conn = sqlite3.connect(path)
     if schema_path and os.path.exists(schema_path):
-        with open(schema_path, "r") as f:
+        with open(schema_path) as f:
             conn.executescript(f.read())
     else:
         conn.executescript(EMBEDDED_SCHEMA)
@@ -99,8 +100,7 @@ def year_fraction(from_date: dt.date, to_date: dt.date) -> float:
     return max(days, 0) / 365.0
 
 
-def fetch_ticker(conn: sqlite3.Connection, ticker: str, rate: float,
-                 max_expiries: int) -> None:
+def fetch_ticker(conn: sqlite3.Connection, ticker: str, rate: float, max_expiries: int) -> None:
     """Fetch one ticker's spot + option chain and store a snapshot."""
     import yfinance as yf  # imported lazily so --help works without it
 
@@ -160,8 +160,7 @@ def fetch_ticker(conn: sqlite3.Connection, ticker: str, rate: float,
         try:
             chain = tk.option_chain(expiry)
         except Exception as e:
-            print(f"  [warn] {ticker} {expiry}: chain fetch failed ({e})",
-                  file=sys.stderr)
+            print(f"  [warn] {ticker} {expiry}: chain fetch failed ({e})", file=sys.stderr)
             continue
         exp_date = dt.date.fromisoformat(expiry)
         t_yrs = year_fraction(today, exp_date)
@@ -189,23 +188,34 @@ def fetch_ticker(conn: sqlite3.Connection, ticker: str, rate: float,
                 except Exception:
                     continue
     conn.commit()
-    print(f"    stored {n_quotes} option quotes across "
-          f"{min(len(expiries), max_expiries)} expiries")
+    print(f"    stored {n_quotes} option quotes across {min(len(expiries), max_expiries)} expiries")
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("tickers", nargs="+", help="ticker symbols, e.g. AAPL MSFT")
-    ap.add_argument("--db", default=DEFAULT_DB,
-                    help="SQLite path (default: data/market.db, relative to CWD)")
-    ap.add_argument("--schema", default=DEFAULT_SCHEMA,
-                    help="schema.sql path (default: data/schema.sql; an embedded "
-                         "copy is used if not found)")
-    ap.add_argument("--rate", type=float, default=DEFAULT_RATE,
-                    help=f"risk-free rate, continuously compounded (default {DEFAULT_RATE})")
-    ap.add_argument("--max-expiries", type=int, default=3,
-                    help="number of nearest expiries to fetch per ticker (default 3)")
+    ap.add_argument(
+        "--db", default=DEFAULT_DB, help="SQLite path (default: data/market.db, relative to CWD)"
+    )
+    ap.add_argument(
+        "--schema",
+        default=DEFAULT_SCHEMA,
+        help="schema.sql path (default: data/schema.sql; an embedded copy is used if not found)",
+    )
+    ap.add_argument(
+        "--rate",
+        type=float,
+        default=DEFAULT_RATE,
+        help=f"risk-free rate, continuously compounded (default {DEFAULT_RATE})",
+    )
+    ap.add_argument(
+        "--max-expiries",
+        type=int,
+        default=3,
+        help="number of nearest expiries to fetch per ticker (default 3)",
+    )
     args = ap.parse_args()
 
     conn = init_db(args.db, args.schema)
