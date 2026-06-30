@@ -105,6 +105,8 @@ struct App {
     exotic_paths: usize,
     exotic_price: Option<f64>,
     exotic_ms: Option<f64>,
+    // Background-pricing channel: Some while a computation is in flight.
+    exotic_rx: Option<std::sync::mpsc::Receiver<(f64, f64)>>,
 }
 
 impl App {
@@ -163,6 +165,7 @@ impl App {
             exotic_paths: 200_000,
             exotic_price: None,
             exotic_ms: None,
+            exotic_rx: None,
         };
         app.recompute();
         app.open_data_store();
@@ -486,6 +489,7 @@ impl App {
                     None => "—".to_string(),
                 };
                 let ad_delta = self.engine.ad_greek(AdGreek::Delta, self.opt_type, q);
+                let ad_gamma = self.engine.ad_greek(AdGreek::Gamma, self.opt_type, q);
                 let ad_vega = self.engine.ad_greek(AdGreek::Vega, self.opt_type, q);
                 let ad_rho = self.engine.ad_greek(AdGreek::Rho, self.opt_type, q);
 
@@ -503,7 +507,7 @@ impl App {
                         ui.end_row();
                         ui.label("Gamma");
                         ui.label(format!("{:.4}", self.greeks.gamma));
-                        ui.weak("—"); // gamma not exposed via AD path
+                        ui.label(fmt(ad_gamma));
                         ui.end_row();
                         ui.label("Vega");
                         ui.label(format!("{:.4}", self.greeks.vega));
@@ -912,21 +916,55 @@ impl App {
                 ui.end_row();
             });
 
-        if ui.button("Price exotic").clicked() {
-            let t0 = std::time::Instant::now();
-            self.exotic_price = self.engine.price_exotic(
-                self.exotic_kind,
-                self.exotic_type,
-                q,
-                self.exotic_barrier,
-                self.exotic_barrier_kind,
-                self.exotic_steps,
-                self.exotic_paths,
-            );
-            self.exotic_ms = Some(t0.elapsed().as_secs_f64() * 1000.0);
+        // Drain a finished background computation, if any.
+        if let Some(rx) = &self.exotic_rx {
+            if let Ok((price, ms)) = rx.try_recv() {
+                self.exotic_price = Some(price);
+                self.exotic_ms = Some(ms);
+                self.exotic_rx = None; // done
+            }
         }
 
+        let computing = self.exotic_rx.is_some();
+        ui.add_enabled_ui(!computing, |ui| {
+            if ui.button("Price exotic").clicked() {
+                // Run the Monte Carlo off the UI thread so the window stays
+                // responsive; the worker owns its own engine and sends the
+                // result back over a channel, then wakes the UI.
+                let (tx, rx) = std::sync::mpsc::channel();
+                self.exotic_rx = Some(rx);
+                let ctx = ui.ctx().clone();
+                let (kind, otype, barrier, bkind, steps, paths) = (
+                    self.exotic_kind,
+                    self.exotic_type,
+                    self.exotic_barrier,
+                    self.exotic_barrier_kind,
+                    self.exotic_steps,
+                    self.exotic_paths,
+                );
+                std::thread::spawn(move || {
+                    let engine = match Engine::new() {
+                        Some(e) => e,
+                        None => return,
+                    };
+                    let t0 = std::time::Instant::now();
+                    let price = engine
+                        .price_exotic(kind, otype, q, barrier, bkind, steps, paths)
+                        .unwrap_or(f64::NAN);
+                    let ms = t0.elapsed().as_secs_f64() * 1000.0;
+                    let _ = tx.send((price, ms));
+                    ctx.request_repaint(); // wake the UI to pick up the result
+                });
+            }
+        });
+
         ui.add_space(8.0);
+        if computing {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label("pricing…");
+            });
+        }
         match self.exotic_price {
             Some(p) => {
                 ui.heading(format!("Price: {:.4}", p));

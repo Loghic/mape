@@ -117,13 +117,14 @@ MAPE_API MapeStatus mape_price_portfolio(MapeEngine* engine,
 
 /* --- AD Greeks (exact, via dual numbers) --------------------------------
  * Forward-mode automatic-differentiation Greeks for a European option. These
- * are exact (no bumping). `which`: 0 = delta, 1 = vega, 2 = rho. Returns NaN
- * on invalid input.
+ * are exact (no bumping). delta/vega/rho use first-order duals; gamma uses a
+ * second-order dual. Returns NaN on invalid input.
  */
 typedef enum {
     MAPE_GREEK_DELTA = 0,
     MAPE_GREEK_VEGA  = 1,
-    MAPE_GREEK_RHO   = 2
+    MAPE_GREEK_RHO   = 2,
+    MAPE_GREEK_GAMMA = 3
 } MapeGreek;
 
 MAPE_API double mape_ad_greek(MapeEngine* engine, MapeGreek greek,

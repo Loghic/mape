@@ -240,6 +240,7 @@ pub enum AdGreek {
     Delta = 0,
     Vega = 1,
     Rho = 2,
+    Gamma = 3,
 }
 
 /// Exotic, path-dependent option family. Matches `MapeExotic`.

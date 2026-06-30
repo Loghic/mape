@@ -182,6 +182,7 @@ double mape_ad_greek(MapeEngine* engine, MapeGreek greek, MapeOptionType type,
             case MAPE_GREEK_DELTA: return ad.delta(opt, mkt);
             case MAPE_GREEK_VEGA:  return ad.vega(opt, mkt);
             case MAPE_GREEK_RHO:   return ad.rho(opt, mkt);
+            case MAPE_GREEK_GAMMA: return ad.gamma(opt, mkt);
         }
         return std::nan("");
     } catch (...) {
