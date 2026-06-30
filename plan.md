@@ -502,7 +502,6 @@ stretch goals.
 > `scripts/check_abi_consistency.py` (parses `mape_c_api.h` vs the `extern "C"`
 > block in `bridge.rs`; 16 functions must match).
 
-
 Gotchas #3 and #4 (libstdc++ pulling in headers libc++ doesn't; Clang stricter
 than g++) are exactly what CI catches for free. A pipeline that builds the core
 + FFI on **both g++ (libstdc++) and AppleClang (libc++)**, runs the test harness
@@ -518,7 +517,6 @@ concurrency tests, and runs the **header-vs-Rust consistency check** (parse
 > and `monte_carlo_control_variate` in `variance_reduction.hpp` (control = the
 > closed-form BS price). Tested: antithetic lands near analytic; the control
 > variate drives the self-control error to ~0. See `test_variance_reduction`.
-
 
 MC error shrinks only as 1/√N, which is why §12 leans on threads. Two cheap
 techniques cut the constant in front:
@@ -562,7 +560,6 @@ state, move semantics, ranges-lite). The items below are the ones worth
 > `std::apply`. Heterogeneous legs (options, bonds, FX) in one typed object;
 > `size()` is a compile-time constant. See `test_variadic_portfolio`.
 
-
 A `Portfolio<Insts...>` whose total value and Greeks fold over the parameter
 pack:
 ```cpp
@@ -584,7 +581,6 @@ fold pattern also combines variance-reduction estimators (§14.2).
 > CRTP mixin giving any model bump-and-revalue delta/gamma/vega through the
 > derived `price`, no virtual call. The base ctor is protected + `friend Model`
 > to prevent CRTP misuse.
-
 
 Make §5.1's "optional CRTP" concrete — a static-polymorphism mixin that gives
 any model bump-and-revalue Greeks through the derived `price`, no virtual call:
@@ -608,7 +604,6 @@ drops straight into the parallel-Greeks path in §5.2.
 > delta when present, falling back to the CRTP bump otherwise. See
 > `test_crtp_greeks`.
 
-
 Some models expose an analytic Greek (BS), others don't. Detect it and dispatch:
 use the analytic form when present, fall back to the §15.2 bump otherwise.
 ```cpp
@@ -627,7 +622,6 @@ engine always uses the most accurate Greek available, transparently to callers.
 > in `models/lazy_monte_carlo.hpp` — yields discounted payoffs lazily in O(1)
 > memory, composes with range-for/views, and matches the eager engine exactly
 > for the same seed. See `test_lazy_monte_carlo`.
-
 
 One feature that lands three syllabus topics at once and fits Monte Carlo
 naturally. A **coroutine generator** yields per-path payoffs lazily and exposes
@@ -665,7 +659,6 @@ between the compile-time core and the runtime selection the GUI needs.
 > for clean benchmark timing) and `run_bounded` (a `std::counting_semaphore`
 > caps in-flight tasks). See `test_sync_primitives`.
 
-
 Extends §5.2 with the remaining thread-block topics where they pull weight:
 - **`std::latch`** — a one-shot countdown to release all benchmark worker threads
   at the same instant, so §12's timing isn't polluted by staggered startup.
@@ -686,3 +679,132 @@ Extends §5.2 with the remaining thread-block topics where they pull weight:
   parallel finite-difference PDE, syncing per time level). It rides along *if*
   the FD model (a §4 stretch) gets built; not worth adding alone, since MC paths
   are independent and need no barrier.
+
+---
+
+## 16. Toward a production-shaped analytics engine
+
+A second design review, aimed at moving from "pricing library + GUI" toward the
+shape of a professional quant analytics stack — without breaking the core's
+clean separation. Same rule as §15: **load-bearing, not decoration**.
+Recommended sequence: **property tests → market abstraction → calibration →
+risk/scenario → deterministic MC**, with the quality/docs touches (§16.7)
+threaded in alongside. Items deliberately *not* taken (or scoped down) are in
+§16.8.
+
+### 16.1 Property / invariant testing (do first)
+
+> **Implemented.** `test_invariants` in `core/tests/test_main.cpp` sweeps a grid
+> of markets/contracts and asserts: price ≥ 0, put–call parity, call ≥ discounted
+> intrinsic, call delta ∈ [0,1], American put ≥ European put, and monotonicity in
+> spot/vol/maturity.
+
+
+Highest ROI, lowest risk, and it drops straight into the existing macro harness.
+Assert structural truths instead of single values: put–call parity,
+`call ≥ intrinsic`, `American ≥ European`, `price ≥ 0`, `delta ∈ [0,1]` for a
+call, and monotonicity in spot, vol, and maturity (European call, no dividends).
+Earns its place: catches whole classes of regressions that point-value tests
+sail past — exactly the safety net to have *before* the refactors below.
+
+### 16.2 Market abstraction layer (the enabler)
+
+Replace primitive doubles (rate, vol, `q`) with small value types inside the
+core — `SpotQuote`, `YieldCurve`, `VolSurface` — instead of passing scalars
+everywhere. Earns its place: it's the foundation calibration and risk both build
+on (bucketed vega and DV01 need curves, not scalars), and it opens the door to
+local/stochastic vol, term structures, and multiple curves later. Honest cost:
+a refactor that ripples through the 16 FFI functions — do it deliberately, and
+*before* more double-passing call sites accrete. Keep the types dependency-free
+so the core stays header-only.
+
+### 16.3 Calibration framework
+
+Generalise the existing `implied_vol` (already single-point calibration) to fit
+many quotes at once — a least-squares
+`CalibrationResult calibrate(const Model&, std::span<const MarketQuote>)`. v1
+scope: fit a vol smile/surface (e.g. SVI) and bootstrap a discount curve. Earns
+its place: it closes the market → calibrate → price loop that real engines run
+on, and turns the **Smile tab** from raw points into a *fitted* surface. Scoped
+down on purpose: short-rate model calibration (Hull–White et al.) is out of v1
+— it needs models the engine doesn't have yet.
+
+### 16.4 Risk + scenario engine (one module)
+
+Perturb spot/rate/vol/`q`/FX, reprice, tabulate P&L —
+`run_scenarios(portfolio) -> table`. The same machinery serves portfolio
+delta/gamma, bucketed vega, DV01, and stress tests. Earns its place: it's where
+real desks spend most of their time, it's embarrassingly parallel so it reuses
+the thread pool directly, and it's a clean templates + concurrency showcase.
+Bucketed/curve-based risk depends on §16.2, so sequence it after.
+
+### 16.5 Deterministic parallel Monte Carlo
+
+> **Implemented.** `counter_rng.hpp` (a stateless counter-based RNG +
+> inverse-normal) keys each path's draw by its *global* index, and
+> `monte_carlo_parallel_deterministic` in `threading/parallel_mc.hpp` reduces
+> over fixed-size blocks (not per-thread partials) so the float summation order
+> is also thread-count-independent. Result is **bit-identical** at 1/2/4/8
+> threads — verified in `test_deterministic_mc`, clean under TSan.
+
+
+Make a fixed seed produce identical prices at 1, 2, and 8 threads. Today the
+per-chunk `mt19937_64` ties results to the thread count; a counter-based RNG
+(Philox/Threefry — already the §13 stretch) or deterministic per-path substreams
+fixes it. Earns its place: reproducible tests and benchmarks, and it removes the
+one place where changing the thread count can change a number.
+
+### 16.6 Richer `PricingResult`
+
+> **Implemented.** `PricingResult` in `pricing_result.hpp` carries the price
+> plus *optional* diagnostics (paths, std_error, threads, model) — `std::optional`
+> so a closed-form price reports no fake error, per the "no fabricated number"
+> rule. `monte_carlo_result` populates the standard error from path variance.
+> See `test_pricing_result`.
+
+
+Return diagnostics alongside the price: runtime, paths, standard error,
+iterations, thread count, model. Earns its place: low effort, and both the bench
+harness and the GUI already want it. One caveat, consistent with the "no
+fabricated number" rule: standard error / path count are meaningful for Monte
+Carlo, not for a closed form — make those fields optional / model-dependent
+rather than reporting a fake error for Black–Scholes.
+
+### 16.7 Quality & docs touches (bolt onto existing CI)
+
+> **Partially implemented.** ADRs added (`docs/adr/0001-0003`); the
+> execution sequence diagram already lives in `docs/architecture.md` /
+> `cpp-design.md`; `-Werror -Wall -Wextra` is on all three CI compiler legs
+> (gcc, clang/libc++, AppleClang). Still open: a clang-format gate, committed
+> benchmark-history CSVs with a regression gate, and C-API fuzzing.
+
+
+The CI in §14.1 already exists, so these are extensions, not new infrastructure:
+- **ADRs** — `docs/adr/0001-header-only.md`, `0002-c-abi.md`, `0003-rust-gui.md`:
+  a paragraph each on *why* the decision was made. Near-zero cost, invaluable
+  months later.
+- **Execution sequence diagram** — GUI → FFI → Pricer → Model → Result, in
+  Mermaid like the existing architecture diagrams.
+- **Warnings-as-errors** — `-Werror -Wall -Wextra` (plus compiler-specific sets)
+  on both GCC and Clang.
+- **Lint/format gate** — clang-format + clang-tidy, rustfmt + clippy.
+- **Benchmark history** — keep `bench/results/v0.x.csv` (the bench already emits
+  CSV) and regression-gate it in CI.
+- **C-API fuzzing** — fuzz the flat C surface against malformed input; this
+  directly exercises the "catch all exceptions at the boundary" rule.
+
+### 16.8 Considered but deferred / scoped (and why)
+
+- **Serialization (JSON save/load)** of instruments, portfolios, and market
+  snapshots — useful for reproducible demos, but it stays *out of the core*
+  (which is deliberately dependency-free and header-only). Put it in the FFI/GUI
+  layer or an optional module.
+- **Composable MC pipeline** (RNG → Brownian bridge → process → path transform →
+  payoff → estimator) — elegant, but premature given the working
+  `variance_reduction` and `lazy_monte_carlo`. Revisit when a third MC variant
+  (Sobol/QMC or stochastic vol) actually arrives, so the policy seams are driven
+  by real need rather than speculation.
+- **Dynamic plugin / `ModelFactory`** — fights the compile-time `Pricer<Model>`
+  + concepts design for little gain (recompiling to add a model is fine). The
+  only warranted slice is a small *static* name → model registry at the FFI seam
+  — which is already the Bridge in §15.5, not a dynamic-loading system.

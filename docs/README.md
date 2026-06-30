@@ -26,5 +26,8 @@ In-depth documentation for the multi-asset pricing engine. Diagrams use
   three modes" trick, threading choices, how the modules connect, and how the
   FFI works.
 
+- **[adr/](adr/)** — Architecture Decision Records: short notes on *why* the
+  header-only core, the C ABI boundary, and the Rust GUI were chosen.
+
 See also [`../AGENTS.md`](../AGENTS.md) for contributor/agent guidance and
 [`../plan.md`](../plan.md) for the original design.

@@ -46,7 +46,7 @@ ffi/
 └── tests/c_smoke_test.c        pure-C consumer test
 
 core/tests/
-├── test_main.cpp               runtime test harness (50 checks)
+├── test_main.cpp               runtime test harness (66 checks)
 └── test_compile_time.cpp       compile-time (static_assert) tests
 ```
 

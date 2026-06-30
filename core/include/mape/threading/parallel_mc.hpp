@@ -2,6 +2,7 @@
 #define MAPE_THREADING_PARALLEL_MC_HPP
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <future>
@@ -11,6 +12,7 @@
 #include <vector>
 
 #include "mape/concepts.hpp"
+#include "mape/counter_rng.hpp"
 #include "mape/models/path_monte_carlo.hpp"
 
 namespace mape {
@@ -121,6 +123,66 @@ double monte_carlo_path_parallel(const GbmPathGenerator& gen, const Pay& payoff,
 
     double sum = 0.0;
     for (auto& f : futures) sum += f.get();
+    return discount * (sum / static_cast<double>(total_paths));
+}
+
+// Deterministic parallel Monte Carlo (plan §16.5). Yields a *bit-identical*
+// price regardless of thread count, for a fixed key.
+//
+// Two ingredients are needed for true bit-exactness:
+//   1. Each path draws from a counter-based RNG keyed by its GLOBAL index, so
+//      the value path `i` sees is independent of how paths are partitioned.
+//   2. The reduction is over a FIXED number of fixed-size blocks (not one
+//      partial sum per thread). Floating-point addition isn't associative, so
+//      the *grouping* must not depend on thread count either — otherwise the
+//      last bit wobbles. We sum each block, then sum the block totals in block
+//      order; that ordering is the same whether 1 thread or 8 compute them.
+template <StochasticProcess Process, Payoff Pay>
+double monte_carlo_parallel_deterministic(const Process& process,
+                                          const Pay& payoff,
+                                          std::size_t total_paths,
+                                          double discount, unsigned n_threads = 0,
+                                          std::uint64_t key = 0x5EED) {
+    if (n_threads == 0)
+        n_threads = std::max(1u, std::thread::hardware_concurrency());
+    if (total_paths == 0) return 0.0;
+    n_threads = static_cast<unsigned>(
+        std::min<std::size_t>(n_threads, total_paths));
+
+    // Fixed block size, independent of thread count, so the reduction grouping
+    // is identical for any n_threads. The number of blocks depends only on
+    // total_paths.
+    constexpr std::size_t kBlock = 65536;
+    const std::size_t n_blocks = (total_paths + kBlock - 1) / kBlock;
+    std::vector<double> block_sums(n_blocks, 0.0);
+
+    // Workers fill block_sums[b] independently (disjoint indices — no races).
+    std::vector<std::future<void>> futures;
+    futures.reserve(n_threads);
+    std::atomic<std::size_t> next_block{0};
+    for (unsigned t = 0; t < n_threads; ++t) {
+        futures.push_back(std::async(std::launch::async,
+            [&process, &payoff, &block_sums, &next_block, key, total_paths,
+             n_blocks] {
+                for (;;) {
+                    const std::size_t b = next_block.fetch_add(1);
+                    if (b >= n_blocks) break;
+                    const std::size_t lo = b * kBlock;
+                    const std::size_t hi = std::min(lo + kBlock, total_paths);
+                    double s = 0.0;
+                    for (std::size_t i = lo; i < hi; ++i) {
+                        const double z = counter_normal(key, i);
+                        s += payoff(process.terminal(z));
+                    }
+                    block_sums[b] = s;  // each block written once
+                }
+            }));
+    }
+    for (auto& f : futures) f.get();
+
+    // Reduce in fixed block order — identical grouping at any thread count.
+    double sum = 0.0;
+    for (double bs : block_sums) sum += bs;
     return discount * (sum / static_cast<double>(total_paths));
 }
 

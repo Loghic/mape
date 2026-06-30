@@ -510,6 +510,120 @@ static void test_sync_primitives() {
     CHECK(ok, "semaphore-bounded runner returns correct, ordered results");
 }
 
+// --- 17. Property / invariant tests (§16.1) -----------------------------
+// Assert structural truths that must hold for ANY valid inputs, rather than a
+// single hand-computed value — catches whole classes of regression.
+static void test_invariants() {
+    std::printf("test_invariants\n");
+    BlackScholes bs;
+    BinomialTree tree(1000);
+
+    // Sweep a grid of markets and contracts.
+    const double spots[] = {60, 90, 100, 110, 150};
+    const double strikes[] = {80, 100, 120};
+    const double vols[] = {0.10, 0.25, 0.50};
+    const double mats[] = {0.25, 1.0, 3.0};
+    const double rate = 0.04, div = 0.0;
+
+    bool parity = true, nonneg = true, intrinsic = true, amer_ge = true;
+    bool delta_band = true, mono_spot = true, mono_vol = true, mono_mat = true;
+
+    for (double S : spots)
+      for (double K : strikes)
+        for (double vol : vols)
+          for (double T : mats) {
+            MarketData mkt{S, rate, vol, div};
+            Option call{OptionType::Call, Exercise::European, K, T};
+            Option put{OptionType::Put, Exercise::European, K, T};
+            const double c = bs.price(call, mkt);
+            const double p = bs.price(put, mkt);
+
+            // price >= 0
+            if (c < -1e-9 || p < -1e-9) nonneg = false;
+            // put-call parity: C - P = S e^{-qT} - K e^{-rT}
+            const double rhs = S * std::exp(-div * T) - K * std::exp(-rate * T);
+            if (std::fabs((c - p) - rhs) > 1e-6) parity = false;
+            // call >= discounted intrinsic on the forward
+            const double fwd_intrinsic =
+                std::max(S * std::exp(-div * T) - K * std::exp(-rate * T), 0.0);
+            if (c < fwd_intrinsic - 1e-6) intrinsic = false;
+            // call delta in [0, 1]
+            const double d = bs.delta(call, mkt);
+            if (d < -1e-9 || d > 1.0 + 1e-9) delta_band = false;
+            // American >= European (binomial), for a put where it can bite
+            Option amer_put{OptionType::Put, Exercise::American, K, T};
+            if (tree.price(amer_put, mkt) < tree.price(put, mkt) - 1e-6)
+                amer_ge = false;
+
+            // monotonicity: call price increases in spot, vol, maturity
+            const double h = 1.0;
+            MarketData up_s = mkt; up_s.spot += h;
+            if (bs.price(call, up_s) < c - 1e-9) mono_spot = false;
+            MarketData up_v = mkt; up_v.vol += 0.01;
+            if (bs.price(call, up_v) < c - 1e-9) mono_vol = false;
+            Option longer = call; longer.maturity += 0.5;
+            if (bs.price(longer, mkt) < c - 1e-9) mono_mat = false;
+          }
+
+    CHECK(nonneg, "invariant: price >= 0");
+    CHECK(parity, "invariant: put-call parity holds across the grid");
+    CHECK(intrinsic, "invariant: call >= discounted intrinsic");
+    CHECK(delta_band, "invariant: call delta in [0,1]");
+    CHECK(amer_ge, "invariant: American put >= European put");
+    CHECK(mono_spot, "invariant: call increases in spot");
+    CHECK(mono_vol, "invariant: call increases in vol");
+    CHECK(mono_mat, "invariant: call increases in maturity");
+}
+
+// --- 18. Deterministic parallel MC (§16.5) ------------------------------
+static void test_deterministic_mc() {
+    std::printf("test_deterministic_mc\n");
+    Option call = make_call();
+    MarketData mkt = make_market();
+    auto proc = GbmProcess::from_market(mkt, call.maturity);
+    double disc = std::exp(-mkt.rate * call.maturity);
+    const std::size_t n = 2'000'000;
+
+    // Same key must give a bit-identical price at any thread count — the whole
+    // point of the counter-based RNG + fixed-block reduction.
+    double p1 = monte_carlo_parallel_deterministic(proc, call.payoff(), n, disc, 1, 42);
+    double p2 = monte_carlo_parallel_deterministic(proc, call.payoff(), n, disc, 2, 42);
+    double p4 = monte_carlo_parallel_deterministic(proc, call.payoff(), n, disc, 4, 42);
+    double p8 = monte_carlo_parallel_deterministic(proc, call.payoff(), n, disc, 8, 42);
+    CHECK(p1 == p2 && p2 == p4 && p4 == p8,
+          "deterministic MC: bit-identical across 1/2/4/8 threads");
+
+    // And it still converges to the analytic price.
+    CHECK_NEAR(p1, BlackScholes{}.price(call, mkt), 5e-2,
+               "deterministic MC near analytic");
+}
+
+// --- 19. Richer PricingResult with diagnostics (§16.6) ------------------
+static void test_pricing_result() {
+    std::printf("test_pricing_result\n");
+    Option call = make_call();
+    MarketData mkt = make_market();
+    auto proc = GbmProcess::from_market(mkt, call.maturity);
+    double disc = std::exp(-mkt.rate * call.maturity);
+    double exact = BlackScholes{}.price(call, mkt);
+
+    auto r = monte_carlo_result(proc, call.payoff(), 1'000'000, disc, 99);
+    CHECK_NEAR(r.price, exact, 5e-2, "MC result price near analytic");
+    CHECK(r.paths.value_or(0) == 1'000'000, "result records paths");
+
+    // Pull the optionals into locals once we've confirmed they're present, so
+    // every subsequent access is provably safe (no unchecked-optional warning).
+    const double se = r.std_error.value_or(-1.0);
+    CHECK(se > 0.0, "result reports a positive standard error");
+    const double half_width = r.confidence_95().value_or(-1.0);
+    CHECK(half_width > 0.0, "95% half-width available for MC");
+    // The analytic price should sit within a few standard errors of the MC mean.
+    CHECK(std::fabs(r.price - exact) < 5.0 * se,
+          "analytic within 5 standard errors of MC mean");
+    std::printf("  (MC price %.4f ± %.4f, exact %.4f)\n", r.price, half_width,
+                exact);
+}
+
 int main() {
     test_black_scholes_reference();
     test_greeks();
@@ -527,6 +641,9 @@ int main() {
     test_variadic_portfolio();
     test_lazy_monte_carlo();
     test_sync_primitives();
+    test_invariants();
+    test_deterministic_mc();
+    test_pricing_result();
 
     std::printf("\n%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
