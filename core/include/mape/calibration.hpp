@@ -108,9 +108,16 @@ inline CalibrationResult calibrate_svi(std::span<const MarketQuote> quotes,
     std::array<double, 5> start{avg_var, 0.1, -0.3, 0.0, 0.1};
 
     // --- Nelder-Mead over 5 dimensions ---
-    constexpr int N = 5;
-    std::array<std::array<double, N>, N + 1> simplex{};
-    std::array<double, N + 1> fval{};
+    // A simplex in N dimensions has N+1 vertices. kV is that vertex count and
+    // kWorst the index of the last (worst, after sorting) vertex. Using named
+    // constants for both the array sizes and the loop bounds keeps them
+    // provably consistent (and avoids a false out-of-bounds from cppcheck's
+    // value-flow analysis on `N + 1`).
+    constexpr int N = 5;            // number of parameters / dimensions
+    constexpr int kV = N + 1;       // number of simplex vertices
+    constexpr int kWorst = kV - 1;  // index of the worst vertex == N
+    std::array<std::array<double, N>, kV> simplex{};
+    std::array<double, kV> fval{};
     simplex[0] = start;
     for (int i = 0; i < N; ++i) {
         simplex[i + 1] = start;
@@ -118,19 +125,19 @@ inline CalibrationResult calibrate_svi(std::span<const MarketQuote> quotes,
                                             : 0.05;
         simplex[i + 1][i] += step;
     }
-    for (int i = 0; i <= N; ++i) fval[i] = objective(simplex[i]);
+    for (int i = 0; i < kV; ++i) fval[i] = objective(simplex[i]);
 
     const double alpha = 1.0, gamma = 2.0, rho = 0.5, sigma = 0.5;
     int iter = 0;
     for (; iter < max_iter; ++iter) {
         // Order vertices by objective value (simple insertion sort).
-        for (int i = 0; i <= N; ++i)
-            for (int j = i + 1; j <= N; ++j)
+        for (int i = 0; i < kV; ++i)
+            for (int j = i + 1; j < kV; ++j)
                 if (fval[j] < fval[i]) {
                     std::swap(fval[i], fval[j]);
                     std::swap(simplex[i], simplex[j]);
                 }
-        if (std::fabs(fval[N] - fval[0]) < tol) break;
+        if (std::fabs(fval[kWorst] - fval[0]) < tol) break;
 
         // Centroid of all but the worst.
         std::array<double, N> centroid{};
@@ -142,7 +149,7 @@ inline CalibrationResult calibrate_svi(std::span<const MarketQuote> quotes,
         auto reflect = [&](double coeff) {
             std::array<double, N> p{};
             for (int d = 0; d < N; ++d)
-                p[d] = centroid[d] + coeff * (centroid[d] - simplex[N][d]);
+                p[d] = centroid[d] + coeff * (centroid[d] - simplex[kWorst][d]);
             return p;
         };
 
@@ -151,20 +158,20 @@ inline CalibrationResult calibrate_svi(std::span<const MarketQuote> quotes,
         if (fr < fval[0]) {
             auto xe = reflect(alpha * gamma);
             const double fe = objective(xe);
-            if (fe < fr) { simplex[N] = xe; fval[N] = fe; }
-            else { simplex[N] = xr; fval[N] = fr; }
-        } else if (fr < fval[N - 1]) {
-            simplex[N] = xr; fval[N] = fr;
+            if (fe < fr) { simplex[kWorst] = xe; fval[kWorst] = fe; }
+            else { simplex[kWorst] = xr; fval[kWorst] = fr; }
+        } else if (fr < fval[kWorst - 1]) {
+            simplex[kWorst] = xr; fval[kWorst] = fr;
         } else {
             // Contraction.
             std::array<double, N> xc{};
             for (int d = 0; d < N; ++d)
-                xc[d] = centroid[d] + rho * (simplex[N][d] - centroid[d]);
+                xc[d] = centroid[d] + rho * (simplex[kWorst][d] - centroid[d]);
             const double fc = objective(xc);
-            if (fc < fval[N]) { simplex[N] = xc; fval[N] = fc; }
+            if (fc < fval[kWorst]) { simplex[kWorst] = xc; fval[kWorst] = fc; }
             else {
                 // Shrink toward the best vertex.
-                for (int i = 1; i <= N; ++i) {
+                for (int i = 1; i < kV; ++i) {
                     for (int d = 0; d < N; ++d)
                         simplex[i][d] = simplex[0][d] +
                                         sigma * (simplex[i][d] - simplex[0][d]);
@@ -176,7 +183,7 @@ inline CalibrationResult calibrate_svi(std::span<const MarketQuote> quotes,
 
     // Best vertex.
     int best = 0;
-    for (int i = 1; i <= N; ++i)
+    for (int i = 1; i < kV; ++i)
         if (fval[i] < fval[best]) best = i;
     const auto& x = simplex[best];
 
