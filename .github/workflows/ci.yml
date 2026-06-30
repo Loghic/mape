@@ -139,10 +139,13 @@ jobs:
 
       - name: Build C++ tests with coverage instrumentation
         run: |
-          # Header-only core: instrument the two test drivers, which exercise
-          # the whole core (test_main.cpp) and the C ABI (c_smoke_test.c).
+          # Header-only core: instrument the test drivers, which exercise the
+          # whole core (test_main.cpp), the compile-time path
+          # (test_compile_time.cpp), and the C ABI (c_smoke_test.c).
           g++ -std=c++20 -O0 -g --coverage -pthread \
             -Icore/include core/tests/test_main.cpp -o core_tests
+          g++ -std=c++20 -O0 -g --coverage -pthread \
+            -Icore/include core/tests/test_compile_time.cpp -o ct_tests
           g++ -std=c++20 -O0 -g --coverage -pthread \
             -Icore/include -Iffi/include -c ffi/src/mape_c_api.cpp -o mape_c_api.o
           ar rcs libmape.a mape_c_api.o
@@ -153,6 +156,7 @@ jobs:
       - name: Run instrumented tests
         run: |
           ./core_tests
+          ./ct_tests
           ./ffi_c_test
 
       - name: Capture coverage with lcov

@@ -31,4 +31,16 @@ if(MAPE_BUILD_TESTS)
     endif()
 
     add_test(NAME mape_core_tests COMMAND mape_core_tests)
+
+    # Compile-time pricing tests (plan §5.4). Most checks are static_asserts,
+    # so simply building this target validates them; it also runs a runtime
+    # cross-check against the analytic model.
+    add_executable(mape_ct_tests tests/test_compile_time.cpp)
+    target_link_libraries(mape_ct_tests PRIVATE mape::core)
+    target_compile_features(mape_ct_tests PRIVATE cxx_std_20)
+    if(MAPE_ENABLE_WARNINGS)
+        target_compile_options(mape_ct_tests PRIVATE
+            $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra>)
+    endif()
+    add_test(NAME mape_ct_tests COMMAND mape_ct_tests)
 endif()

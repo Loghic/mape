@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "mape/autodiff.hpp"
+#include "mape/ct_math.hpp"
 #include "mape/instruments.hpp"
 #include "mape/market_data.hpp"
 
@@ -15,13 +16,16 @@ namespace mape {
 // whichever input was seeded with derivative 1.
 //
 // ADL note: `exp`, `log`, `sqrt`, `erfc` resolve to mape::Dual overloads when
-// T == Dual, and to std:: when T == double (via the using-declarations).
+// T == Dual (automatic differentiation), to mape::ct overloads when
+// T == ct::CtDouble (compile-time pricing, plan §5.4), and to std:: when
+// T == double (runtime). `constexpr` lets the CtDouble instantiation fold
+// inside a constant expression / static_assert.
 template <typename T>
-T bs_price_generic(OptionType type, T S, T K, T r, T q, T sigma, T T_exp) {
+constexpr T bs_price_generic(OptionType type, T S, T K, T r, T q, T sigma, T T_exp) {
+    using std::erfc;
     using std::exp;
     using std::log;
     using std::sqrt;
-    using std::erfc;
 
     const T sqrtT = sqrt(T_exp);
     const T d1 = (log(S / K) + (r - q + T(0.5) * sigma * sigma) * T_exp) /

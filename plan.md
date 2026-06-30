@@ -194,6 +194,62 @@ Where threads earn their place:
 - `std::chrono` for day-count / maturity handling.
 - `<algorithm>` + ranges for payoff aggregation.
 
+### 5.4 Compile-time pricing (`constexpr` / `consteval`)
+
+> **Implemented.** `core/include/mape/ct_math.hpp` (constexpr sqrt/exp/log and
+> the Abramowitz–Stegun normal CDF, with a `consteval` coefficient table) and
+> `core/include/mape/compile_time.hpp` (constexpr Black–Scholes reusing
+> `bs_price_generic`, constexpr day-count/discounting, and a `consteval`
+> contract validator). Compile-time `static_assert` tests live in
+> `core/tests/test_compile_time.cpp`.
+
+Closed-form models are pure functions of their inputs, so anything with known
+parameters can be priced *at compile time* — which turns a class of regression
+tests into `static_assert`s that cost nothing at runtime and can never silently
+rot.
+
+The catch in C++20: the `<cmath>` transcendentals (`std::exp`, `std::sqrt`,
+`std::erf`) are **not** `constexpr` until C++23. That gap is exactly why these
+helpers are worth writing ourselves — it makes `constexpr`/`consteval`
+load-bearing here rather than decorative.
+
+- **`constexpr` math primitives** — a small set of compile-time-evaluable
+  building blocks the closed-form models sit on (`sqrt`, `exp`, normal CDF):
+  ```cpp
+  constexpr double sqrt_ct(double x) {            // Newton–Raphson (illustrative)
+      double g = x;
+      for (int i = 0; i < 30; ++i) g = 0.5 * (g + x / g);
+      return g;
+  }
+
+  // standard normal CDF via Abramowitz–Stegun, fully constexpr
+  constexpr double norm_cdf(double x);            // polynomial approximation
+  ```
+- **`constexpr` Black–Scholes** — with the primitives above, the European
+  closed form evaluates inside a constant expression:
+  ```cpp
+  constexpr double bs_call(double s, double k, double r, double vol, double t);
+
+  // a regression test that runs at compile time, for free:
+  static_assert(approx(bs_call(100, 100, 0.05, 0.20, 1.0), 10.4506, 1e-3));
+  ```
+- **`consteval` for must-happen-at-compile-time work** — guaranteed
+  compile-time evaluation, with no silent runtime fallback:
+  - a `consteval` factory/validator that rejects nonsensical specs (negative
+    strike, vol, or maturity) at compile time, so an invalid *literal* contract
+    simply won't compile;
+  - `consteval`-built coefficient tables (e.g. the Abramowitz–Stegun constants,
+    or Sobol direction numbers) materialised once at compile time instead of on
+    first use.
+- **`constexpr` day-count / discounting** — year fractions and discount factors
+  (`exp(-r·t)` via the `constexpr` exp) computed in constant expressions
+  wherever the schedule is known.
+
+This slots in alongside the templated models (§5.1): the same Black–Scholes
+logic the runtime `Pricer<BlackScholes>` uses can *be* the `constexpr`
+function, keeping a single source of truth rather than a parallel
+compile-time copy.
+
 ---
 
 ## 6. The FFI bridge (C++ ↔ Rust)

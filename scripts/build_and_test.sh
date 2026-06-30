@@ -67,4 +67,11 @@ else
         -I"$ROOT/core/include" \
         "$ROOT/core/tests/test_main.cpp" -o "$ROOT/build_mape_tests"
     "$ROOT/build_mape_tests"
+
+    # Compile-time pricing tests (plan §5.4): static_asserts validated by the
+    # build itself, plus a runtime cross-check.
+    "$CXX" "${GPP_FLAGS[@]}" \
+        -I"$ROOT/core/include" \
+        "$ROOT/core/tests/test_compile_time.cpp" -o "$ROOT/build_mape_ct_tests"
+    "$ROOT/build_mape_ct_tests"
 fi
