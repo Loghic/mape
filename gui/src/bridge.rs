@@ -345,6 +345,7 @@ impl Engine {
     /// Price a book of options (same market, varying strike/maturity) using
     /// the engine's thread pool. `strikes` and `maturities` must be equal
     /// length; returns one price per instrument.
+    #[allow(clippy::too_many_arguments)]
     pub fn price_portfolio(
         &self,
         model: Model,
@@ -490,6 +491,7 @@ impl Engine {
     /// Implied volatility that reproduces `market_price` for a European
     /// option. Returns `None` when no valid implied vol exists (price below
     /// intrinsic, above the no-arbitrage bound, or numerically undefined).
+    #[allow(clippy::too_many_arguments)]
     pub fn implied_vol(
         &self,
         ty: OptionType,
