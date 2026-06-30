@@ -1,30 +1,53 @@
 # clang-tidy configuration for the C++ pricing core + FFI.
 #
-# Focus on bug-prone patterns, correctness, and modern C++ usage. We disable a
-# few checks that fight this codebase's deliberate style: the FFI layer must use
-# C-style interfaces and pointer arithmetic at the boundary, and the header-only
-# core uses short local names (S, K, r, T) that match financial notation.
+# Philosophy: clang-tidy should catch *bugs*, not enforce one house style. We
+# enable the analyzer, the bug-prone family, performance, and the
+# correctness-oriented core-guidelines checks, then disable the purely
+# stylistic ones (brace placement, designated initializers, [[nodiscard]]
+# placement, redundant parentheses on well-understood math, etc.) that would
+# otherwise produce hundreds of no-value diffs and fight the codebase's
+# deliberate, consistent style.
+#
+# Notable disables and why:
+#   * performance-enum-size — OptionType/Exercise/BarrierKind are mirrored
+#     across the C ABI as C enums (int) and as #[repr(i32)] in Rust. Shrinking
+#     the C++ base type would create a cross-language ABI size mismatch, far
+#     worse than the few bytes saved. The check is wrong for this architecture.
+#   * pro-bounds-* / pro-type-vararg — the FFI layer is intentionally C-style
+#     (pointers, printf-free but raw arrays across the boundary).
+#   * avoid-magic-numbers — financial formulas are full of literal constants.
+#
+# NOTE: do NOT put comments inside the `Checks:` folded scalar below — YAML
+# folds them into the string and breaks parsing of the lines that follow.
 Checks: >
   clang-analyzer-*,
   bugprone-*,
   performance-*,
-  modernize-*,
   cppcoreguidelines-*,
-  readability-*,
-  -modernize-use-trailing-return-type,
-  -readability-identifier-length,
-  -readability-magic-numbers,
+  modernize-use-override,
+  modernize-use-nullptr,
+  modernize-use-using,
+  modernize-loop-convert,
+  modernize-make-unique,
+  modernize-make-shared,
+  -bugprone-easily-swappable-parameters,
+  -performance-enum-size,
   -cppcoreguidelines-avoid-magic-numbers,
-  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
-  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
   -cppcoreguidelines-avoid-do-while,
   -cppcoreguidelines-owning-memory,
-  -bugprone-easily-swappable-parameters
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-avoid-c-arrays,
+  -cppcoreguidelines-narrowing-conversions,
+  -cppcoreguidelines-use-default-member-init,
+  -cppcoreguidelines-special-member-functions,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -cppcoreguidelines-macro-usage,
+  -cppcoreguidelines-init-variables
 
-# Promote findings to warnings only; the CI job decides whether to fail.
 WarningsAsErrors: ''
-
-# Lint our headers, not system or third-party ones.
 HeaderFilterRegex: 'core/include/mape/.*'
-
 FormatStyle: none

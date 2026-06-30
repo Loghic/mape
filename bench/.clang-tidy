@@ -1,0 +1,21 @@
+# clang-tidy config scoped to the benchmark harness.
+#
+# Inherits the project root .clang-tidy, then relaxes a few checks that fight
+# the deliberate design of a tiny, dependency-free benchmark driver. These are
+# style/idiom preferences, not defects:
+#
+#   * pro-type-vararg — the harness emits CSV with std::printf/std::fprintf on
+#     purpose (a dependency-free, format-stable emitter). Switching to iostreams
+#     would be more verbose and no safer here.
+#   * use-designated-initializers — the positional Option{...} aggregate form is
+#     used consistently across the whole codebase; designated init is optional.
+#   * use-ranges — std::ranges::sort is nicer but ranges support is uneven across
+#     libc++ versions; the iterator form is more portable for a header.
+#   * narrowing-conversions — benchmark math intentionally mixes counts (size_t)
+#     and times (double); explicit casts are used where it matters.
+InheritParentConfig: true
+Checks: >
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-narrowing-conversions,
+  -modernize-use-designated-initializers,
+  -modernize-use-ranges

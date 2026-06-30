@@ -43,7 +43,7 @@ constexpr double bs_put(double spot, double strike, double rate, double vol,
 // ACT/365 year fraction between two integer day counts (never negative).
 constexpr double year_fraction(long start_day, long end_day) {
     const long days = end_day - start_day;
-    return (days > 0 ? days : 0) / 365.0;
+    return static_cast<double>(days > 0 ? days : 0) / 365.0;
 }
 
 // Continuously-compounded discount factor exp(-r * t), via the constexpr exp.

@@ -171,9 +171,10 @@ static void test_portfolio_threadpool() {
     BlackScholes bs;
     MarketData mkt = make_market();
     std::vector<Option> book;
+    book.reserve(200);
     for (int i = 0; i < 200; ++i) {
         book.push_back(Option{OptionType::Call, Exercise::European,
-                              80.0 + i * 0.2, 1.0});
+                              80.0 + (i * 0.2), 1.0});
     }
     ThreadPool pool(4);
     auto prices = price_portfolio(bs, book, mkt, pool);

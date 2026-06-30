@@ -105,8 +105,8 @@ static double greek(MapeEngine* engine, MapeOptionType type, double spot,
             case 0: return bs.delta(opt, mkt);
             case 1: return bs.gamma(opt, mkt);
             case 2: return bs.vega(opt, mkt);
+            default: return std::nan("");
         }
-        return std::nan("");
     } catch (...) {
         return std::nan("");
     }
