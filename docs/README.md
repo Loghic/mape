@@ -12,6 +12,13 @@ In-depth documentation for the multi-asset pricing engine. Diagrams use
   what the `concept` keyword does and the four concepts in use, where the
   templates live, and how the threading (parallel Monte Carlo + thread pool)
   works, all with code references.
+- **[cpp-codemap.md](cpp-codemap.md)** — navigation guide to the C++: every
+  header, what's in it, and where to find each feature. Start here to find
+  something in the code.
+- **[cpp-design.md](cpp-design.md)** — in-depth design rationale: why
+  header-only, why concepts over inheritance, the scalar-generic "one formula,
+  three modes" trick, threading choices, how the modules connect, and how the
+  FFI works.
 
 See also [`../AGENTS.md`](../AGENTS.md) for contributor/agent guidance and
 [`../plan.md`](../plan.md) for the original design.

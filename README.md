@@ -47,6 +47,11 @@ Monte Carlo and portfolio pricing.
 - [`docs/cpp20-concepts.md`](docs/cpp20-concepts.md) — in-depth: what the
   `concept` keyword does and the four concepts in use, where the templates live,
   and how the threading works, with code references.
+- [`docs/cpp-codemap.md`](docs/cpp-codemap.md) — navigation map of the C++:
+  every header and where each feature lives.
+- [`docs/cpp-design.md`](docs/cpp-design.md) — C++ design rationale: why
+  header-only, concepts vs inheritance, the scalar-generic trick, threading, how
+  modules connect, and how the FFI works.
 - [`AGENTS.md`](AGENTS.md) — contributor/agent guide: commands, conventions, and
   the gotchas worth knowing before editing.
 
