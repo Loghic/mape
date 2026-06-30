@@ -16,6 +16,7 @@
 #include "mape/implied_vol.hpp"
 #include "mape/instruments.hpp"
 #include "mape/market_data.hpp"
+#include "mape/market_types.hpp"
 #include "mape/portfolio.hpp"
 #include "mape/portfolio_compile_time.hpp"
 #include "mape/pricer.hpp"

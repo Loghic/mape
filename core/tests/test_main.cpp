@@ -624,6 +624,57 @@ static void test_pricing_result() {
                 exact);
 }
 
+// --- 20. Market value types (§16.2) -------------------------------------
+static void test_market_types() {
+    std::printf("test_market_types\n");
+
+    // YieldCurve: flat curve equals the scalar; term structure interpolates.
+    YieldCurve flat = YieldCurve::flat(0.05);
+    CHECK_NEAR(flat.rate_at(1.0), 0.05, 1e-12, "flat curve rate == scalar");
+    CHECK_NEAR(flat.discount(2.0), std::exp(-0.05 * 2.0), 1e-12,
+               "flat curve discount factor");
+
+    YieldCurve term = YieldCurve::from_pivots({1.0, 2.0, 5.0},
+                                              {0.03, 0.035, 0.045});
+    CHECK_NEAR(term.rate_at(1.0), 0.03, 1e-12, "curve hits pivot");
+    CHECK_NEAR(term.rate_at(1.5), 0.0325, 1e-12, "curve interpolates midpoint");
+    CHECK_NEAR(term.rate_at(0.5), 0.03, 1e-12, "curve clamps below first pivot");
+    CHECK_NEAR(term.rate_at(10.0), 0.045, 1e-12, "curve clamps above last pivot");
+
+    // VolSurface: flat vs smile lookup.
+    VolSurface vflat = VolSurface::flat(0.20);
+    CHECK_NEAR(vflat.vol_at(100.0), 0.20, 1e-12, "flat surface vol == scalar");
+    VolSurface smile = VolSurface::smile({80, 100, 120}, {0.25, 0.20, 0.23});
+    CHECK_NEAR(smile.vol_at(100.0), 0.20, 1e-12, "smile hits ATM pivot");
+    CHECK_NEAR(smile.vol_at(90.0), 0.225, 1e-12, "smile interpolates");
+    CHECK(smile.vol_at(80) > smile.vol_at(100), "smile: wing above ATM");
+
+    // MarketData backward compatibility + override semantics.
+    MarketData flat_md{100.0, 0.05, 0.20, 0.0};
+    CHECK_NEAR(flat_md.rate_at(3.0), 0.05, 1e-12, "MarketData flat rate_at");
+    CHECK_NEAR(flat_md.vol_at(100.0), 0.20, 1e-12, "MarketData flat vol_at");
+
+    // Attach a curve: rate_at now follows the curve, not the flat field.
+    MarketData curved = flat_md;
+    curved.curve = term;
+    CHECK_NEAR(curved.rate_at(1.5), 0.0325, 1e-12,
+               "attached curve overrides flat rate");
+    // Attaching a surface overrides flat vol.
+    curved.surface = smile;
+    CHECK_NEAR(curved.vol_at(90.0), 0.225, 1e-12,
+               "attached surface overrides flat vol");
+
+    // A flat curve read through MarketData matches the scalar rate —
+    // proves the abstraction is a no-op when flat (the compatibility guarantee).
+    Option call = make_call();
+    MarketData scalar{100.0, 0.04, 0.25, 0.0};
+    MarketData with_flat_curve = scalar;
+    with_flat_curve.curve = YieldCurve::flat(0.04);
+    CHECK_NEAR(scalar.rate_at(call.maturity),
+               with_flat_curve.rate_at(call.maturity), 1e-12,
+               "flat curve == scalar rate end to end");
+}
+
 int main() {
     test_black_scholes_reference();
     test_greeks();
@@ -644,6 +695,7 @@ int main() {
     test_invariants();
     test_deterministic_mc();
     test_pricing_result();
+    test_market_types();
 
     std::printf("\n%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

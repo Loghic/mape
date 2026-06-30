@@ -13,7 +13,8 @@ language-feature deep dive (concepts/templates/threading), see
 ```
 core/include/mape/
 ├── mape.hpp                    umbrella header — includes everything
-├── market_data.hpp             MarketData (spot, rate, vol, dividend)
+├── market_data.hpp             MarketData (flat scalars + optional curve/surface)
+├── market_types.hpp            YieldCurve, VolSurface, SpotQuote (§16.2)
 ├── instruments.hpp             Option, Bond, FxForward, payoff callables
 ├── concepts.hpp                PricingModel, Payoff, StochasticProcess, PathPayoff
 ├── pricer.hpp                  Pricer<Model> — the generic engine
@@ -46,7 +47,7 @@ ffi/
 └── tests/c_smoke_test.c        pure-C consumer test
 
 core/tests/
-├── test_main.cpp               runtime test harness (66 checks)
+├── test_main.cpp               runtime test harness (81 checks)
 └── test_compile_time.cpp       compile-time (static_assert) tests
 ```
 

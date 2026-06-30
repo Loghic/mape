@@ -709,6 +709,17 @@ sail past — exactly the safety net to have *before* the refactors below.
 
 ### 16.2 Market abstraction layer (the enabler)
 
+> **Implemented (backward-compatible).** `market_types.hpp` adds `YieldCurve`
+> (flat or interpolated term structure, `rate_at`/`discount`), `VolSurface`
+> (flat or strike smile, `vol_at`), and `SpotQuote`. `MarketData` gains optional
+> `curve`/`surface` members plus `rate_at(T)` / `vol_at(K,T)` accessors that fall
+> back to the flat scalars when unset — so it stays an aggregate and the existing
+> ~60 `MarketData{...}` call sites and the 16 FFI functions are untouched. New
+> code (calibration §16.3, bucketed risk §16.4) can attach a curve/surface; old
+> code keeps using the flat fields. See `test_market_types`. (Chose this over a
+> destabilising big-bang replacement of the scalars.)
+
+
 Replace primitive doubles (rate, vol, `q`) with small value types inside the
 core — `SpotQuote`, `YieldCurve`, `VolSurface` — instead of passing scalars
 everywhere. Earns its place: it's the foundation calibration and risk both build
