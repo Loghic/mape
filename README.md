@@ -41,6 +41,9 @@ Monte Carlo and portfolio pricing.
 - [`docs/user-guide.md`](docs/user-guide.md) — plain-language guide to the GUI:
   what each tab does, every parameter explained, how the models work, plus an
   education-only disclaimer and real-world context.
+- [`docs/study-guide.md`](docs/study-guide.md) — the math behind each model
+  (Black-Scholes, binomial, Monte Carlo, Greeks, implied vol, exotics) mapped
+  to the exact MAPE code that implements it.
 - [`docs/architecture.md`](docs/architecture.md) — how the layers fit together
   (Mermaid diagrams of components, the pricing call, parallel Monte Carlo, the
   data schema, and the build flow).

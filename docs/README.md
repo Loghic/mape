@@ -6,6 +6,9 @@ In-depth documentation for the multi-asset pricing engine. Diagrams use
 - **[user-guide.md](user-guide.md)** — plain-language guide to the desktop app:
   what each tab does, every input explained, how the models work, and an
   education-only disclaimer. Start here if you're using the GUI.
+- **[study-guide.md](study-guide.md)** — the quant bridge: the math behind
+  Black-Scholes, the binomial tree, Monte Carlo, the Greeks, implied vol, and
+  exotics — each with formulas *and* the exact MAPE code that implements it.
 - **[architecture.md](architecture.md)** — how the C++ core, C ABI, Rust GUI,
   and Python/SQLite data layer fit together; sequence and data-flow diagrams.
 - **[cpp20-concepts.md](cpp20-concepts.md)** — deep dive on the C++20 features:
