@@ -6,6 +6,7 @@
 // threading utilities.
 
 #include "mape/autodiff.hpp"
+#include "mape/calibration.hpp"
 #include "mape/compile_time.hpp"
 #include "mape/concepts.hpp"
 #include "mape/counter_rng.hpp"

@@ -675,6 +675,51 @@ static void test_market_types() {
                "flat curve == scalar rate end to end");
 }
 
+// --- 21. Calibration: SVI smile + curve bootstrap (§16.3) ---------------
+static void test_calibration() {
+    std::printf("test_calibration\n");
+    const double forward = 100.0, T = 1.0;
+
+    // Generate synthetic quotes from a KNOWN SVI smile, then fit and check the
+    // fitted vols reproduce them. (SVI params aren't unique, so we test the
+    // vols the fit produces, not the raw parameters.)
+    SviParams truth{0.04, 0.10, -0.4, 0.0, 0.10};
+    std::vector<MarketQuote> quotes;
+    std::vector<double> strikes;
+    for (double K = 70; K <= 130; K += 5) {
+        quotes.push_back({K, T, truth.vol(K, forward, T)});
+        strikes.push_back(K);
+    }
+
+    auto res = calibrate_svi(quotes, forward);
+    CHECK(res.converged, "SVI fit converged");
+    CHECK(res.rmse < 1e-3, "SVI fit reproduces the smile (low RMSE)");
+    // Spot-check a couple of strikes against the truth vols.
+    CHECK_NEAR(res.params.vol(80, forward, T), truth.vol(80, forward, T), 2e-3,
+               "fitted SVI vol matches truth at K=80");
+    CHECK_NEAR(res.params.vol(120, forward, T), truth.vol(120, forward, T),
+               2e-3, "fitted SVI vol matches truth at K=120");
+    std::printf("  (SVI rmse=%.2e, iters=%d)\n", res.rmse, res.iterations);
+
+    // Turn the fit into a VolSurface the engine can price off.
+    VolSurface surf = svi_to_surface(res.params, forward, T, strikes);
+    CHECK_NEAR(surf.vol_at(100.0), truth.vol(100, forward, T), 2e-3,
+               "svi_to_surface ATM vol");
+    CHECK(surf.vol_at(70) > surf.vol_at(100),
+          "fitted surface shows a skew (downside vol higher)");
+
+    // Curve bootstrap: discount factors -> zero-rate curve, round-trip exact.
+    std::vector<double> mats = {0.5, 1.0, 2.0, 5.0};
+    std::vector<double> rates_true = {0.03, 0.035, 0.04, 0.045};
+    std::vector<double> dfs;
+    for (std::size_t i = 0; i < mats.size(); ++i)
+        dfs.push_back(std::exp(-rates_true[i] * mats[i]));
+    YieldCurve curve = bootstrap_curve(mats, dfs);
+    for (std::size_t i = 0; i < mats.size(); ++i)
+        CHECK_NEAR(curve.rate_at(mats[i]), rates_true[i], 1e-12,
+                   "bootstrapped curve recovers the zero rate");
+}
+
 int main() {
     test_black_scholes_reference();
     test_greeks();
@@ -696,6 +741,7 @@ int main() {
     test_deterministic_mc();
     test_pricing_result();
     test_market_types();
+    test_calibration();
 
     std::printf("\n%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

@@ -24,6 +24,7 @@ core/include/mape/
 ├── ct_math.hpp                 constexpr sqrt/exp/log/erfc + CtDouble
 ├── compile_time.hpp            constexpr Black-Scholes, consteval validator
 ├── implied_vol.hpp             implied_vol() — invert BS for vol
+├── calibration.hpp             SVI smile fit (Nelder-Mead) + curve bootstrap (§16.3)
 ├── exotic.hpp                  Asian/barrier/lookback PathPayoffs
 ├── variance_reduction.hpp      control-variate MC (antithetic in monte_carlo.hpp)
 ├── greeks_mixin.hpp            BumpGreeks<Model> CRTP + HasAnalyticDelta/best_delta
@@ -47,7 +48,7 @@ ffi/
 └── tests/c_smoke_test.c        pure-C consumer test
 
 core/tests/
-├── test_main.cpp               runtime test harness (81 checks)
+├── test_main.cpp               runtime test harness (91 checks)
 └── test_compile_time.cpp       compile-time (static_assert) tests
 ```
 
@@ -71,6 +72,8 @@ core/tests/
 | Thread pool | `threading/thread_pool.hpp` | `ThreadPool` |
 | Portfolio pricing | `portfolio.hpp` | `price_portfolio` |
 | Implied volatility | `implied_vol.hpp` | `implied_vol` |
+| Calibration | `calibration.hpp` | `calibrate_svi`, `SviParams`, `bootstrap_curve` |
+| Market types | `market_types.hpp` | `YieldCurve`, `VolSurface`, `SpotQuote` |
 | Bond / FX | `models/fixed_income.hpp` | `price_bond`, `price_fx_forward`, `fx_forward_rate` |
 | Compile-time math | `ct_math.hpp` | `sqrt_ct`, `exp_ct`, `log_ct`, `erfc_ct`, `CtDouble` |
 | Compile-time pricing | `compile_time.hpp` | `ct::bs_call`, `ct::make_option` (consteval) |

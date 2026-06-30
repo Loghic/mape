@@ -215,7 +215,7 @@ stretch goals: exotic path-dependent payoffs, bond/FX pricing, AD Greeks
 implied-vol solver, compile-time pricing (`constexpr`/`consteval`), and the GUI
 convergence + volatility-smile charts. The C↔Rust binding signatures are
 verified consistent against `mape_c_api.h` (16 functions). The C++ core passes
-81 checks and is clean under ThreadSanitizer; the compile-time and C ABI smoke
+91 checks and is clean under ThreadSanitizer; the compile-time and C ABI smoke
 tests pass.
 
 Remaining ideas (not yet done): yield-curve bootstrapping / multi-curve

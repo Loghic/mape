@@ -731,6 +731,14 @@ so the core stays header-only.
 
 ### 16.3 Calibration framework
 
+> **Implemented.** `calibration.hpp`: `calibrate_svi` fits Gatheral raw-SVI
+> (5 params) to a smile by least squares via a built-in Nelder-Mead simplex
+> (dependency-free); `svi_to_surface` turns the fit into a `VolSurface`;
+> `bootstrap_curve` recovers a `YieldCurve` from discount factors. Verified by
+> recovering a synthetic SVI smile to RMSE ~3e-6 and round-tripping a zero curve.
+> See `test_calibration`. (Short-rate model calibration remains out of scope, as
+> the plan notes — the engine has no such models yet.)
+
 Generalise the existing `implied_vol` (already single-point calibration) to fit
 many quotes at once — a least-squares
 `CalibrationResult calibrate(const Model&, std::span<const MarketQuote>)`. v1
