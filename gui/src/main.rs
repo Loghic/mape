@@ -3,15 +3,15 @@
 //! The GUI does no math: it formats inputs, calls the C++ engine over the safe
 //! FFI bridge, and renders the results (plan §7).
 
-// The bridge is a complete, intentionally-public binding of the C API. Not
-// every function is called by the GUI yet (e.g. exotics, bond/FX, AD Greeks
-// are exposed for callers and the forthcoming volatility-smile tab), so we
-// allow dead code here rather than trim the binding to only what main.rs uses.
-#[allow(dead_code)]
+// The bridge is a complete, intentionally-public binding of the C API. A few
+// items (e.g. the Status::Ok variant, mirroring the C ABI) are not used from
+// Rust, so dead-code analysis is relaxed at their definitions.
 mod bridge;
 mod data;
 
-use bridge::{Engine, Exercise, Greeks, Model, OptionType, Quote};
+use bridge::{
+    AdGreek, BarrierKind, Engine, Exercise, Exotic, Greeks, Model, OptionType, Quote,
+};
 use data::DataStore;
 use eframe::egui;
 use egui_plot::{Legend, Line, Plot, PlotPoints, Points};
@@ -35,6 +35,8 @@ enum Tab {
     Portfolio,
     Convergence,
     Smile,
+    FixedIncome,
+    Exotics,
 }
 
 struct App {
@@ -81,6 +83,28 @@ struct App {
     smile_skipped: usize,
     smile_spot: f64,
     smile_asof: String, // snapshot timestamp shown for context
+
+    // Fixed-income tab state.
+    bond_face: f64,
+    bond_coupon: f64,
+    bond_maturity: f64,
+    bond_frequency: i32,
+    bond_rate: f64,
+    fx_spot: f64,
+    fx_strike: f64,
+    fx_maturity: f64,
+    fx_domestic_rate: f64,
+    fx_foreign_rate: f64,
+
+    // Exotics tab state.
+    exotic_kind: Exotic,
+    exotic_type: OptionType,
+    exotic_barrier: f64,
+    exotic_barrier_kind: BarrierKind,
+    exotic_steps: usize,
+    exotic_paths: usize,
+    exotic_price: Option<f64>,
+    exotic_ms: Option<f64>,
 }
 
 impl App {
@@ -121,9 +145,32 @@ impl App {
             smile_skipped: 0,
             smile_spot: 0.0,
             smile_asof: String::new(),
+            bond_face: 100.0,
+            bond_coupon: 0.05,
+            bond_maturity: 5.0,
+            bond_frequency: 2,
+            bond_rate: 0.05,
+            fx_spot: 1.25,
+            fx_strike: 1.28,
+            fx_maturity: 1.0,
+            fx_domestic_rate: 0.05,
+            fx_foreign_rate: 0.03,
+            exotic_kind: Exotic::Asian,
+            exotic_type: OptionType::Call,
+            exotic_barrier: 130.0,
+            exotic_barrier_kind: BarrierKind::UpAndOut,
+            exotic_steps: 50,
+            exotic_paths: 200_000,
+            exotic_price: None,
+            exotic_ms: None,
         };
         app.recompute();
         app.open_data_store();
+        // If a ticker was preloaded, compute its smile up front so the Vol
+        // smile tab shows a curve the moment it's opened.
+        if app.smile_ticker.is_some() {
+            app.recompute_smile();
+        }
         app
     }
 
@@ -138,6 +185,15 @@ impl App {
             match DataStore::open(&path) {
                 Ok(store) => match store.tickers() {
                     Ok(t) if !t.is_empty() => {
+                        // Pre-select the first ticker + its first expiry so the
+                        // Vol smile tab is usable immediately and "Compute
+                        // smile" works without the user first picking from the
+                        // dropdowns.
+                        let first = t[0].clone();
+                        let expiries = store.expiries(&first).unwrap_or_default();
+                        self.smile_expiry = expiries.first().cloned();
+                        self.smile_expiries = expiries;
+                        self.smile_ticker = Some(first);
                         self.smile_tickers = t;
                         self.store = Some(store);
                         self.db_status = format!("loaded {}", path.display());
@@ -290,7 +346,11 @@ impl eframe::App for App {
             ui.horizontal(|ui| {
                 ui.heading("Multi-Asset Pricing Engine");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(format!("core v{}", self.version));
+                    ui.hyperlink_to(
+                        "guide",
+                        "https://github.com/Loghic/mape/blob/main/docs/user-guide.md",
+                    );
+                    ui.label(format!("core v{}  ·", self.version));
                 });
             });
             ui.horizontal(|ui| {
@@ -298,6 +358,8 @@ impl eframe::App for App {
                 ui.selectable_value(&mut self.tab, Tab::Portfolio, "Portfolio");
                 ui.selectable_value(&mut self.tab, Tab::Convergence, "Convergence");
                 ui.selectable_value(&mut self.tab, Tab::Smile, "Vol smile");
+                ui.selectable_value(&mut self.tab, Tab::FixedIncome, "Fixed income");
+                ui.selectable_value(&mut self.tab, Tab::Exotics, "Exotics");
             });
         });
 
@@ -306,6 +368,8 @@ impl eframe::App for App {
             Tab::Portfolio => self.portfolio_tab(ui),
             Tab::Convergence => self.convergence_tab(ui),
             Tab::Smile => self.smile_tab(ui),
+            Tab::FixedIncome => self.fixed_income_tab(ui),
+            Tab::Exotics => self.exotics_tab(ui),
         });
     }
 }
@@ -413,22 +477,48 @@ impl App {
             Some(p) => {
                 ui.heading(format!("Price: {:.4}", p));
                 ui.add_space(6.0);
+
+                // Exact Greeks via automatic differentiation (dual numbers),
+                // shown beside the closed-form values as a cross-check.
+                let q = self.quote();
+                let fmt = |o: Option<f64>| match o {
+                    Some(v) => format!("{:.4}", v),
+                    None => "—".to_string(),
+                };
+                let ad_delta = self.engine.ad_greek(AdGreek::Delta, self.opt_type, q);
+                let ad_vega = self.engine.ad_greek(AdGreek::Vega, self.opt_type, q);
+                let ad_rho = self.engine.ad_greek(AdGreek::Rho, self.opt_type, q);
+
                 egui::Grid::new("greeks")
-                    .num_columns(2)
-                    .spacing([12.0, 4.0])
+                    .num_columns(3)
+                    .spacing([16.0, 4.0])
                     .show(ui, |ui| {
+                        ui.strong("Greek");
+                        ui.strong("closed-form");
+                        ui.strong("AD (exact)");
+                        ui.end_row();
                         ui.label("Delta");
                         ui.label(format!("{:.4}", self.greeks.delta));
+                        ui.label(fmt(ad_delta));
                         ui.end_row();
                         ui.label("Gamma");
                         ui.label(format!("{:.4}", self.greeks.gamma));
+                        ui.weak("—"); // gamma not exposed via AD path
                         ui.end_row();
                         ui.label("Vega");
                         ui.label(format!("{:.4}", self.greeks.vega));
+                        ui.label(fmt(ad_vega));
+                        ui.end_row();
+                        ui.label("Rho");
+                        ui.weak("—");
+                        ui.label(fmt(ad_rho));
                         ui.end_row();
                     });
                 ui.add_space(4.0);
-                ui.weak("Greeks are closed-form (Black-Scholes), European-style.");
+                ui.weak(
+                    "Closed-form Greeks are Black-Scholes, European-style. AD \
+                     Greeks are exact (forward-mode dual numbers).",
+                );
             }
             None => {
                 ui.colored_label(egui::Color32::LIGHT_RED, &self.status);
@@ -593,11 +683,9 @@ impl App {
             dirty |= ui
                 .selectable_value(&mut self.smile_type, OptionType::Put, "Put")
                 .clicked();
-
-            if ui.button("Compute smile").clicked() {
-                dirty = true;
-            }
         });
+        // The smile recomputes automatically whenever the ticker, expiry, or
+        // option type changes — no explicit "compute" button needed.
 
         if dirty {
             self.recompute_smile();
@@ -608,7 +696,7 @@ impl App {
             ui.weak(&self.db_status);
         }
         if self.smile_points.is_empty() {
-            ui.weak("Select a ticker and expiry, then Compute smile.");
+            ui.weak("No implied vols to plot — pick a ticker and expiry above.");
             return;
         }
 
@@ -644,5 +732,214 @@ impl App {
             });
 
         ui.weak(format!("spot {:.2}  ·  as of {}", spot, self.smile_asof));
+    }
+
+    fn fixed_income_tab(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            "Analytic pricing for the non-option instruments: a fixed-coupon \
+             bond and an FX forward.",
+        );
+        ui.add_space(8.0);
+
+        // --- Bond ---------------------------------------------------------
+        ui.heading("Fixed-coupon bond");
+        egui::Grid::new("bond_inputs")
+            .num_columns(2)
+            .spacing([12.0, 6.0])
+            .show(ui, |ui| {
+                ui.label("Face");
+                ui.add(egui::DragValue::new(&mut self.bond_face).speed(1.0));
+                ui.end_row();
+                ui.label("Coupon (annual)");
+                ui.add(
+                    egui::DragValue::new(&mut self.bond_coupon)
+                        .speed(0.001)
+                        .max_decimals(4),
+                );
+                ui.end_row();
+                ui.label("Maturity (yrs)");
+                ui.add(egui::DragValue::new(&mut self.bond_maturity).speed(0.5));
+                ui.end_row();
+                ui.label("Coupons / year");
+                ui.add(egui::DragValue::new(&mut self.bond_frequency).speed(1));
+                ui.end_row();
+                ui.label("Rate (cont.)");
+                ui.add(
+                    egui::DragValue::new(&mut self.bond_rate)
+                        .speed(0.001)
+                        .max_decimals(4),
+                );
+                ui.end_row();
+            });
+        let bond_pv = self.engine.price_bond(
+            self.bond_face,
+            self.bond_coupon,
+            self.bond_maturity,
+            self.bond_frequency,
+            self.bond_rate,
+        );
+        match bond_pv {
+            Some(pv) => ui.strong(format!("Present value: {:.4}", pv)),
+            None => ui.colored_label(egui::Color32::LIGHT_RED, "invalid bond inputs"),
+        };
+
+        ui.add_space(12.0);
+        ui.separator();
+
+        // --- FX forward ---------------------------------------------------
+        ui.heading("FX forward");
+        egui::Grid::new("fx_inputs")
+            .num_columns(2)
+            .spacing([12.0, 6.0])
+            .show(ui, |ui| {
+                ui.label("Spot (dom/for)");
+                ui.add(
+                    egui::DragValue::new(&mut self.fx_spot)
+                        .speed(0.01)
+                        .max_decimals(4),
+                );
+                ui.end_row();
+                ui.label("Strike");
+                ui.add(
+                    egui::DragValue::new(&mut self.fx_strike)
+                        .speed(0.01)
+                        .max_decimals(4),
+                );
+                ui.end_row();
+                ui.label("Maturity (yrs)");
+                ui.add(egui::DragValue::new(&mut self.fx_maturity).speed(0.25));
+                ui.end_row();
+                ui.label("Domestic rate");
+                ui.add(
+                    egui::DragValue::new(&mut self.fx_domestic_rate)
+                        .speed(0.001)
+                        .max_decimals(4),
+                );
+                ui.end_row();
+                ui.label("Foreign rate");
+                ui.add(
+                    egui::DragValue::new(&mut self.fx_foreign_rate)
+                        .speed(0.001)
+                        .max_decimals(4),
+                );
+                ui.end_row();
+            });
+        let fx_pv = self.engine.price_fx_forward(
+            self.fx_spot,
+            self.fx_strike,
+            self.fx_maturity,
+            self.fx_domestic_rate,
+            self.fx_foreign_rate,
+        );
+        let fair = self.engine.fx_forward_rate(
+            self.fx_spot,
+            self.fx_maturity,
+            self.fx_domestic_rate,
+            self.fx_foreign_rate,
+        );
+        match (fx_pv, fair) {
+            (Some(pv), Some(f)) => {
+                ui.strong(format!("Present value: {:.6}", pv));
+                ui.weak(format!("fair forward rate: {:.6}", f));
+            }
+            _ => {
+                ui.colored_label(egui::Color32::LIGHT_RED, "invalid FX inputs");
+            }
+        }
+    }
+
+    fn exotics_tab(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            "Path-dependent options priced by parallel Monte Carlo. Uses spot, \
+             rate, vol, dividend and strike from the Single tab.",
+        );
+        let q = self.quote();
+
+        egui::Grid::new("exotic_inputs")
+            .num_columns(2)
+            .spacing([12.0, 6.0])
+            .show(ui, |ui| {
+                ui.label("Exotic");
+                egui::ComboBox::from_id_source("exotic_kind")
+                    .selected_text(format!("{:?}", self.exotic_kind))
+                    .show_ui(ui, |ui| {
+                        for e in [Exotic::Asian, Exotic::Barrier, Exotic::Lookback] {
+                            ui.selectable_value(&mut self.exotic_kind, e, format!("{:?}", e));
+                        }
+                    });
+                ui.end_row();
+
+                ui.label("Type");
+                egui::ComboBox::from_id_source("exotic_type")
+                    .selected_text(format!("{:?}", self.exotic_type))
+                    .show_ui(ui, |ui| {
+                        for t in [OptionType::Call, OptionType::Put] {
+                            ui.selectable_value(&mut self.exotic_type, t, format!("{:?}", t));
+                        }
+                    });
+                ui.end_row();
+
+                // Barrier-only inputs.
+                if self.exotic_kind == Exotic::Barrier {
+                    ui.label("Barrier");
+                    ui.add(egui::DragValue::new(&mut self.exotic_barrier).speed(1.0));
+                    ui.end_row();
+                    ui.label("Barrier kind");
+                    egui::ComboBox::from_id_source("barrier_kind")
+                        .selected_text(format!("{:?}", self.exotic_barrier_kind))
+                        .show_ui(ui, |ui| {
+                            for k in [
+                                BarrierKind::UpAndOut,
+                                BarrierKind::DownAndOut,
+                                BarrierKind::UpAndIn,
+                                BarrierKind::DownAndIn,
+                            ] {
+                                ui.selectable_value(
+                                    &mut self.exotic_barrier_kind,
+                                    k,
+                                    format!("{:?}", k),
+                                );
+                            }
+                        });
+                    ui.end_row();
+                }
+
+                ui.label("Steps / path");
+                ui.add(egui::DragValue::new(&mut self.exotic_steps).speed(1));
+                ui.end_row();
+                ui.label("Paths");
+                ui.add(egui::DragValue::new(&mut self.exotic_paths).speed(1000));
+                ui.end_row();
+            });
+
+        if ui.button("Price exotic").clicked() {
+            let t0 = std::time::Instant::now();
+            self.exotic_price = self.engine.price_exotic(
+                self.exotic_kind,
+                self.exotic_type,
+                q,
+                self.exotic_barrier,
+                self.exotic_barrier_kind,
+                self.exotic_steps,
+                self.exotic_paths,
+            );
+            self.exotic_ms = Some(t0.elapsed().as_secs_f64() * 1000.0);
+        }
+
+        ui.add_space(8.0);
+        match self.exotic_price {
+            Some(p) => {
+                ui.heading(format!("Price: {:.4}", p));
+                if let Some(ms) = self.exotic_ms {
+                    ui.weak(format!(
+                        "{} paths × {} steps in {:.1} ms (threaded)",
+                        self.exotic_paths, self.exotic_steps, ms
+                    ));
+                }
+            }
+            None => {
+                ui.weak("Set parameters and press Price exotic.");
+            }
+        }
     }
 }

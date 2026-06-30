@@ -84,6 +84,9 @@ mod ffi {
             dividend: c_double,
         ) -> c_double;
 
+        // The status-code variant of mape_price; the GUI uses the NaN-returning
+        // `mape_price` instead, but this is kept to mirror the full C ABI.
+        #[allow(dead_code)]
         pub fn mape_price_ex(
             engine: *mut MapeEngine,
             model: i32,

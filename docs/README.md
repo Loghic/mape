@@ -3,6 +3,9 @@
 In-depth documentation for the multi-asset pricing engine. Diagrams use
 [Mermaid](https://mermaid.js.org/) and render on GitHub.
 
+- **[user-guide.md](user-guide.md)** — plain-language guide to the desktop app:
+  what each tab does, every input explained, how the models work, and an
+  education-only disclaimer. Start here if you're using the GUI.
 - **[architecture.md](architecture.md)** — how the C++ core, C ABI, Rust GUI,
   and Python/SQLite data layer fit together; sequence and data-flow diagrams.
 - **[cpp20-concepts.md](cpp20-concepts.md)** — deep dive on the C++20 features:

@@ -38,6 +38,9 @@ Monte Carlo and portfolio pricing.
 
 ## Documentation
 
+- [`docs/user-guide.md`](docs/user-guide.md) — plain-language guide to the GUI:
+  what each tab does, every parameter explained, how the models work, plus an
+  education-only disclaimer and real-world context.
 - [`docs/architecture.md`](docs/architecture.md) — how the layers fit together
   (Mermaid diagrams of components, the pricing call, parallel Monte Carlo, the
   data schema, and the build flow).
@@ -216,10 +219,12 @@ cargo run --release
 What happens: `build.rs` configures and builds the `mape_ffi` target via the
 `cmake` crate, links the resulting static `libmape`, and pulls in the C++
 standard library for your platform (`libstdc++` on Linux, `libc++` on macOS,
-MSVC runtime on Windows). The window has four tabs — single-instrument pricing
-with Greeks, a portfolio tab whose **Reprice all** button exercises the threaded
-path, a **Convergence** chart, and a **Vol smile** tab driven by real market
-data (see below).
+MSVC runtime on Windows). The window has six tabs — single-instrument pricing
+with closed-form **and exact AD Greeks**, a portfolio tab whose **Reprice all**
+button exercises the threaded path, a **Convergence** chart, a **Vol smile** tab
+driven by real market data (see below), a **Fixed income** tab (bond + FX
+forward), and an **Exotics** tab (Asian / barrier / lookback via parallel Monte
+Carlo).
 
 > Crate versions in `Cargo.toml` (`eframe`/`egui` 0.27) are a known-good
 > baseline; pin them in `Cargo.lock` (committed by `cargo build`). If you bump
