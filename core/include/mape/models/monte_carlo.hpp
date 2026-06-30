@@ -47,6 +47,26 @@ double monte_carlo_price(const Process& process, const Pay& payoff,
     return discount * (sum / static_cast<double>(paths));
 }
 
+// Antithetic-variates Monte Carlo (plan §14.2). For each standard-normal draw
+// Z it also uses -Z, averaging the two payoffs. Because the two paths are
+// negatively correlated for monotone payoffs, the variance of the estimator
+// drops (often ~halves) at the same number of RNG draws. `pairs` is the number
+// of antithetic *pairs*, so the effective sample size is 2*pairs.
+template <StochasticProcess Process, Payoff Pay>
+double monte_carlo_price_antithetic(const Process& process, const Pay& payoff,
+                                    std::size_t pairs, double discount,
+                                    std::uint64_t seed = 12345ULL) {
+    std::mt19937_64 rng(seed);
+    std::normal_distribution<double> norm(0.0, 1.0);
+    double sum = 0.0;
+    for (std::size_t i = 0; i < pairs; ++i) {
+        const double z = norm(rng);
+        sum += 0.5 * (payoff(process.terminal(z)) +
+                      payoff(process.terminal(-z)));
+    }
+    return discount * (sum / static_cast<double>(pairs));
+}
+
 // Model wrapper so MonteCarlo plugs into Pricer<MonteCarlo> like the others.
 class MonteCarlo {
 public:

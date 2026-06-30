@@ -361,6 +361,96 @@ static void test_implied_vol() {
           "zero price -> no IV");
 }
 
+// --- 12. Variance reduction (§14.2): antithetic + control variate -------
+static void test_variance_reduction() {
+    std::printf("test_variance_reduction\n");
+    BlackScholes bs;
+    Option call = make_call();
+    MarketData mkt = make_market();
+    const double exact = bs.price(call, mkt);
+    const double disc = std::exp(-mkt.rate * call.maturity);
+    auto proc = GbmProcess::from_market(mkt, call.maturity);
+
+    // Antithetic: with N pairs it still lands near the analytic price.
+    double anti = monte_carlo_price_antithetic(proc, call.payoff(), 1'000'000,
+                                               disc, 42);
+    CHECK_NEAR(anti, exact, 5e-2, "antithetic MC near analytic");
+
+    // Control variate: with a perfectly-correlated control (the payoff itself)
+    // the corrected estimate should be MUCH closer to the analytic price than
+    // the plain MC estimate on the same draws.
+    auto cv = monte_carlo_control_variate(call, mkt, 200'000, 7);
+    const double plain_err = std::fabs(cv.plain_price - exact);
+    const double cv_err = std::fabs(cv.price - exact);
+    CHECK(cv.bs_price == exact, "control mean equals closed-form BS");
+    CHECK(cv_err <= plain_err + 1e-12, "control variate not worse than plain");
+    // For the self-control case the corrected estimate is essentially exact.
+    CHECK_NEAR(cv.price, exact, 1e-6, "control-variate estimate ~ exact");
+    std::printf("  (plain err %.5f, control-variate err %.2e)\n", plain_err,
+                cv_err);
+}
+
+// --- 13. CRTP bump Greeks + capability dispatch (§15.2/§15.3) ------------
+namespace {
+// A model with NO analytic delta — gets bumped Greeks via the CRTP mixin.
+struct BumpOnlyBS : BumpGreeks<BumpOnlyBS> {
+    double price(const Option& opt, const MarketData& mkt) const {
+        return BlackScholes{}.price(opt, mkt);
+    }
+};
+}  // namespace
+
+static void test_crtp_greeks() {
+    std::printf("test_crtp_greeks\n");
+    BlackScholes bs;        // has analytic delta
+    BumpOnlyBS bumped;      // only CRTP bump delta
+    Option call = make_call();
+    MarketData mkt = make_market();
+
+    // The CRTP bump delta matches the analytic delta.
+    CHECK_NEAR(bumped.bump_delta(call, mkt), bs.delta(call, mkt), 1e-5,
+               "CRTP bump delta ~ analytic delta");
+    CHECK_NEAR(bumped.bump_gamma(call, mkt), bs.gamma(call, mkt), 1e-3,
+               "CRTP bump gamma ~ analytic gamma");
+
+    // Capability dispatch: best_delta uses the analytic path for BlackScholes
+    // and the bump path for BumpOnlyBS — both correct, chosen at compile time.
+    static_assert(HasAnalyticDelta<BlackScholes>, "BS exposes analytic delta");
+    static_assert(!HasAnalyticDelta<BumpOnlyBS>, "BumpOnlyBS does not");
+    CHECK_NEAR(best_delta(bs, call, mkt), bs.delta(call, mkt), 1e-12,
+               "best_delta uses analytic for BS");
+    CHECK_NEAR(best_delta(bumped, call, mkt), bs.delta(call, mkt), 1e-5,
+               "best_delta falls back to bump");
+}
+
+// --- 14. Variadic compile-time Portfolio (§15.1) ------------------------
+static void test_variadic_portfolio() {
+    std::printf("test_variadic_portfolio\n");
+    MarketData mkt = make_market();  // spot 100, r 5%, vol 20%
+
+    Option call{OptionType::Call, Exercise::European, 100.0, 1.0};
+    Option put{OptionType::Put, Exercise::European, 100.0, 1.0};
+    Bond bond{100.0, 0.05, 5.0, 2};
+
+    // A mixed, heterogeneous portfolio: two options + a bond, one typed object.
+    Portfolio book{call, put, bond};
+    static_assert(decltype(book)::size() == 3, "three legs at compile time");
+
+    // Total value equals the sum of the individual leg values (the fold).
+    BlackScholes bs;
+    const double expected = bs.price(call, mkt) + bs.price(put, mkt) +
+                            price_bond(bond, MarketData{0.0, mkt.rate, 0.0, 0.0});
+    // value() prices the bond with the same market; build the comparison the
+    // same way the portfolio does (bond ignores spot/vol).
+    const double got = book.value(mkt);
+    CHECK_NEAR(got, expected, 1e-9, "portfolio value == sum of legs");
+
+    // A straddle (call + put) is just a two-leg portfolio.
+    Portfolio straddle{call, put};
+    CHECK_NEAR(straddle.value(mkt), bs.price(call, mkt) + bs.price(put, mkt),
+               1e-9, "straddle = call + put");
+}
+
 int main() {
     test_black_scholes_reference();
     test_greeks();
@@ -373,6 +463,9 @@ int main() {
     test_exotics();
     test_fixed_income();
     test_implied_vol();
+    test_variance_reduction();
+    test_crtp_greeks();
+    test_variadic_portfolio();
 
     std::printf("\n%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

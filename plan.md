@@ -486,3 +486,182 @@ follows Phase 3 of the roadmap, once parallel Monte Carlo exists.
   thanks to the templated payoff design.
 - Convergence and payoff charts in the GUI.
 - A counter-based RNG (e.g. Philox) for reproducible parallel streams.
+
+---
+
+## 14. Near-term improvements
+
+Three concrete, high-value items from a design review — planned work, not
+stretch goals.
+
+### 14.1 CI matrix (g++ + AppleClang, sanitizers, ABI check)
+
+Gotchas #3 and #4 (libstdc++ pulling in headers libc++ doesn't; Clang stricter
+than g++) are exactly what CI catches for free. A pipeline that builds the core
++ FFI on **both g++ (libstdc++) and AppleClang (libc++)**, runs the test harness
++ the compile-time tests + the C smoke test, runs **TSan and ASan** over the
+concurrency tests, and runs the **header-vs-Rust consistency check** (parse
+`mape_c_api.h` against the `extern "C"` block in `bridge.rs`) turns three
+"learned the hard way" gotchas into a red X before merge. A GitHub Actions
+`{compiler} × {sanitizer}` matrix; the header-only core keeps it cheap.
+
+### 14.2 Monte Carlo variance reduction
+
+> **Implemented.** `monte_carlo_price_antithetic` in `models/monte_carlo.hpp`
+> and `monte_carlo_control_variate` in `variance_reduction.hpp` (control = the
+> closed-form BS price). Tested: antithetic lands near analytic; the control
+> variate drives the self-control error to ~0. See `test_variance_reduction`.
+
+
+MC error shrinks only as 1/√N, which is why §12 leans on threads. Two cheap
+techniques cut the constant in front:
+- **Antithetic variates** — for each draw `Z`, also use `−Z`; roughly halves
+  variance for symmetric payoffs, a few lines in `monte_carlo.hpp`.
+- **Control variates** — reuse the closed-form Black–Scholes (already here) as
+  the control: price the vanilla with both MC and BS and correct the MC estimate
+  by the known BS error. For vanillas the correlation is near-perfect, often an
+  order-of-magnitude error cut, and it's essentially free given BS exists.
+
+Both feed the accuracy-vs-time line in §12 and the Convergence tab. Validated
+the usual way: same price within tolerance, lower standard error at equal paths.
+
+### 14.3 Dividend yield / cost-of-carry
+
+> **Already implemented.** `MarketData` carries a continuous dividend yield `q`,
+> and it flows through Black–Scholes (`df_q = e^{-qT}`, the `(r−q)` drift),
+> the binomial tree, the Monte Carlo GBM drift, and the FFI. The FX forward uses
+> the foreign rate as the carry. Default `q = 0` keeps simple call sites working.
+
+The current BS signature is `(spot, strike, rate, vol, maturity)` — no carry.
+Adding a continuous yield `q` (forward `F = S·e^((r−q)T)`) makes pricing correct
+for dividend-paying equities and indices, and — reading `q` as the foreign rate
+— for FX, which §4 already lists. Small, localized change with a real
+correctness payoff; default `q = 0` keeps existing call sites working.
+
+---
+
+## 15. Techniques from the C++ course (where they actually fit)
+
+Mapping the course syllabus onto the engine, keeping the project's own rule:
+**load-bearing, not decoration**. Several topics are already exercised (concepts,
+templates, threads, `async`/`future`, atomics, condition variables, thread-local
+state, move semantics, ranges-lite). The items below are the ones worth
+*adding*; deliberately skipped topics are at the end with reasons.
+
+### 15.1 Variadic templates + fold expressions — compile-time portfolio
+
+> **Implemented.** `Portfolio<Legs...>` in `portfolio_compile_time.hpp` holds a
+> `std::tuple` of legs and folds a per-leg `leg_value` over the pack via
+> `std::apply`. Heterogeneous legs (options, bonds, FX) in one typed object;
+> `size()` is a compile-time constant. See `test_variadic_portfolio`.
+
+
+A `Portfolio<Insts...>` whose total value and Greeks fold over the parameter
+pack:
+```cpp
+template <class... Insts>
+struct Portfolio {
+    std::tuple<Insts...> legs;
+    double value(const MarketData& m) const {
+        return std::apply([&](auto&... l){ return (price(l, m) + ...); }, legs);
+    }
+};
+```
+Earns its place: a multi-leg strategy (spread, straddle) becomes one typed
+object, aggregation is a fold, leg types are checked at compile time. The same
+fold pattern also combines variance-reduction estimators (§14.2).
+
+### 15.2 CRTP Greeks mixin
+
+> **Implemented** (with §15.3). `BumpGreeks<Model>` in `greeks_mixin.hpp` — a
+> CRTP mixin giving any model bump-and-revalue delta/gamma/vega through the
+> derived `price`, no virtual call. The base ctor is protected + `friend Model`
+> to prevent CRTP misuse.
+
+
+Make §5.1's "optional CRTP" concrete — a static-polymorphism mixin that gives
+any model bump-and-revalue Greeks through the derived `price`, no virtual call:
+```cpp
+template <class Model>
+struct Greeks {
+    double delta(double s, double h) const {
+        const auto& m = static_cast<const Model&>(*this);
+        return (m.price(s + h) - m.price(s - h)) / (2 * h);
+    }
+};
+struct BlackScholes : Greeks<BlackScholes> { double price(double s) const; };
+```
+Earns its place: one definition of bumped Greeks reused across models, and it
+drops straight into the parallel-Greeks path in §5.2.
+
+### 15.3 Capability detection (concepts / SFINAE)
+
+> **Implemented.** `HasAnalyticDelta` concept + `best_delta()` in
+> `greeks_mixin.hpp`: dispatches (via `if constexpr`) to a model's analytic
+> delta when present, falling back to the CRTP bump otherwise. See
+> `test_crtp_greeks`.
+
+
+Some models expose an analytic Greek (BS), others don't. Detect it and dispatch:
+use the analytic form when present, fall back to the §15.2 bump otherwise.
+```cpp
+template <class M>
+concept HasAnalyticDelta =
+    requires(M m){ { m.analytic_delta() } -> std::convertible_to<double>; };
+```
+In C++20 this is a concept; the syllabus's **SFINAE** is the same idea written
+the pre-concepts way (the `std::void_t` detection idiom). Earns its place: the
+engine always uses the most accurate Greek available, transparently to callers.
+
+### 15.4 Lazy path generation — coroutine + STL iterator + ranges/views
+
+One feature that lands three syllabus topics at once and fits Monte Carlo
+naturally. A **coroutine generator** yields per-path payoffs lazily and exposes
+a **standard-conforming input iterator**, so it composes with `<algorithm>` and
+**ranges/views** without ever materialising a giant array:
+```cpp
+generator<double> payoffs(Process proc, std::size_t n, Rng rng);  // co_yield per path
+double sum = 0; std::size_t k = 0;
+for (double pay : payoffs(proc, N, rng)) { sum += pay; ++k; }      // streamed, O(1) memory
+double price = discount * sum / k;
+```
+With views it reads declaratively —
+`payoffs(...) | std::views::filter(itm) | std::views::transform(disc)` for "mean
+discounted payoff over in-the-money paths." Earns its place: streaming caps
+memory regardless of path count and replaces hand-written accumulation loops.
+(`std::generator` is C++23; a hand-rolled C++20 generator coroutine works today.
+This also satisfies the syllabus's "STL-conforming container/iterator" exercise
+far more usefully than a bespoke linked list — see skipped items.)
+
+### 15.5 Bridge / pimpl at the FFI seam
+
+The C ABI's opaque `PricingEngine*` is, in GoF terms, a **Bridge**: a stable
+abstraction (the handle the GUI holds) whose *implementor* — which concrete model
+and configuration — varies at runtime via the GUI's model dropdown. The
+compile-time `Pricer<Model>` templates can't cross the C boundary directly, so a
+small runtime-polymorphic implementor (held by pimpl behind the handle) bridges
+the templated core to the flat C API. Earns its place: it's the actual seam
+between the compile-time core and the runtime selection the GUI needs.
+
+### 15.6 Concurrency primitives: latch, packaged_task, semaphore
+
+Extends §5.2 with the remaining thread-block topics where they pull weight:
+- **`std::latch`** — a one-shot countdown to release all benchmark worker threads
+  at the same instant, so §12's timing isn't polluted by staggered startup.
+- **`std::packaged_task`** — express the portfolio thread pool's jobs as
+  `packaged_task`s that hand back one `future` per instrument.
+- **`std::counting_semaphore`** — cap in-flight tasks (and thus peak path-buffer
+  memory) when a huge book is repriced at once.
+
+### 15.7 Deliberately skipped (and why)
+
+- **C++20 modules** — would fight the header-only, "compiles anywhere with
+  `-Icore/include`", sandbox-friendly design the project leans on (and gotcha
+  #3). Not worth a disruptive rewrite; an isolated experiment at most.
+- **A standalone STL-style linked list** — you'd use `std::vector`; a bespoke
+  list is decoration here. The underlying skill (a conforming container/iterator)
+  is better spent on the lazy path view in §15.4.
+- **`std::barrier`** — lock-step sync only pays off in a staged solver (e.g. a
+  parallel finite-difference PDE, syncing per time level). It rides along *if*
+  the FD model (a §4 stretch) gets built; not worth adding alone, since MC paths
+  are independent and need no barrier.
