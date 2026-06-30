@@ -102,7 +102,16 @@ Or use the helper script:
 ```
 
 `--bench` builds the benchmarks and writes a timestamped CSV to
-`bench/results/` (a summary prints to the terminal). For a detailed walk-through
+`bench/results/` (a summary prints to the terminal).
+
+To reformat the C/C++ to the project style (CI enforces it):
+
+```bash
+./scripts/format.sh            # fix every file in place
+./scripts/format.sh --check    # report-only; what CI runs
+```
+
+For a detailed walk-through
 of every flag, building without CMake, generating `compile_commands.json` for
 your editor, and running the sanitizers, see [`docs/building.md`](docs/building.md).
 

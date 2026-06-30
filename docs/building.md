@@ -156,9 +156,16 @@ It exits non-zero if any model's median runtime regressed beyond the tolerance
 
 Beyond the build, CI runs (see `.github/workflows/static-analysis.yml`):
 
-- **clang-format** — the C/C++ must match `.clang-format`. Check locally with
-  `clang-format --dry-run --Werror <files>`, or fix in place with
-  `clang-format -i`.
+- **clang-format** — the C/C++ must match `.clang-format`. The convenience
+  wrapper handles file discovery for you (same file set as CI):
+
+  ```bash
+  ./scripts/format.sh           # fix every file in place
+  ./scripts/format.sh --check   # report-only; non-zero exit if any diverge (= CI)
+  ```
+
+  Set `CLANG_FORMAT=clang-format-17` to pin a specific binary. (Under the hood
+  it's just `clang-format -i` / `--dry-run --Werror` over `core ffi bench`.)
 - **clang-tidy** and **cppcheck** — static analysis over the core + FFI.
 - **C-API fuzzing** — `ffi/tests/fuzz_c_api.cpp` (libFuzzer) feeds malformed
   input through every C entry point, asserting nothing crashes or throws across

@@ -40,8 +40,8 @@ gui/         Rust eframe/egui app. Links libmape via build.rs.
 bench/       performance benchmarks (plan §12); off unless -DMAPE_BUILD_BENCH=ON
 data/        schema.sql for the SQLite market-data cache
 src/mape_data/   the Python fetcher package (yfinance -> SQLite)
-scripts/     build_and_test.sh (--bench), fetch_data.py shim,
-             check_abi_consistency.py, check_bench_regression.py
+scripts/     build_and_test.sh (--bench), format.sh (--check), fetch_data.py
+             shim, check_abi_consistency.py, check_bench_regression.py
 docs/        user-guide, study-guide, architecture, cpp-design, cpp-codemap,
              cpp20-concepts (Mermaid diagrams throughout)
 pyproject.toml   uv-managed Python project for the data fetcher
