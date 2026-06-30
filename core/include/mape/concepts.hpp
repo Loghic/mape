@@ -13,9 +13,10 @@ namespace mape {
 // something convertible to a price. Constraining the engine this way turns
 // misuse into a compile error rather than a runtime surprise (plan §5.1).
 template <typename T>
-concept PricingModel = requires(const T m, const Option& opt, const MarketData& mkt) {
-    { m.price(opt, mkt) } -> std::convertible_to<double>;
-};
+concept PricingModel =
+    requires(const T m, const Option& opt, const MarketData& mkt) {
+        { m.price(opt, mkt) } -> std::convertible_to<double>;
+    };
 
 // A Payoff maps a terminal spot to a cashflow.
 template <typename T>

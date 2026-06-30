@@ -15,26 +15,27 @@
 using namespace mape;
 
 static int g_failures = 0;
-static int g_checks   = 0;
+static int g_checks = 0;
 
-#define CHECK(cond, msg)                                                       \
-    do {                                                                       \
-        ++g_checks;                                                            \
-        if (!(cond)) {                                                         \
-            ++g_failures;                                                      \
-            std::printf("  FAIL: %s (%s:%d)\n", msg, __FILE__, __LINE__);      \
-        }                                                                      \
+#define CHECK(cond, msg)                                                  \
+    do {                                                                  \
+        ++g_checks;                                                       \
+        if (!(cond)) {                                                    \
+            ++g_failures;                                                 \
+            std::printf("  FAIL: %s (%s:%d)\n", msg, __FILE__, __LINE__); \
+        }                                                                 \
     } while (0)
 
-#define CHECK_NEAR(a, b, tol, msg)                                             \
-    do {                                                                       \
-        ++g_checks;                                                            \
-        double _d = std::fabs((a) - (b));                                      \
-        if (_d > (tol)) {                                                      \
-            ++g_failures;                                                      \
-            std::printf("  FAIL: %s expected %.6f got %.6f (|d|=%.6g > %.6g)\n",\
-                        msg, (double)(b), (double)(a), _d, (double)(tol));     \
-        }                                                                      \
+#define CHECK_NEAR(a, b, tol, msg)                                            \
+    do {                                                                      \
+        ++g_checks;                                                           \
+        double _d = std::fabs((a) - (b));                                     \
+        if (_d > (tol)) {                                                     \
+            ++g_failures;                                                     \
+            std::printf(                                                      \
+                "  FAIL: %s expected %.6f got %.6f (|d|=%.6g > %.6g)\n", msg, \
+                (double)(b), (double)(a), _d, (double)(tol));                 \
+        }                                                                     \
     } while (0)
 
 // Shared test fixture: a textbook ATM-ish European call.
@@ -74,7 +75,7 @@ static void test_greeks() {
     MarketData mkt = make_market();
     double delta = bs.delta(call, mkt);
     double gamma = bs.gamma(call, mkt);
-    double vega  = bs.vega(call, mkt);
+    double vega = bs.vega(call, mkt);
     CHECK(delta > 0.0 && delta < 1.0, "call delta in (0,1)");
     CHECK(gamma > 0.0, "gamma positive");
     CHECK(vega > 0.0, "vega positive");
@@ -82,7 +83,8 @@ static void test_greeks() {
     // Cross-check delta against a finite-difference bump.
     double h = 1e-4;
     MarketData up = mkt, dn = mkt;
-    up.spot += h; dn.spot -= h;
+    up.spot += h;
+    dn.spot -= h;
     double fd_delta = (bs.price(call, up) - bs.price(call, dn)) / (2 * h);
     CHECK_NEAR(delta, fd_delta, 1e-4, "delta vs finite-difference");
 }
@@ -94,7 +96,7 @@ static void test_binomial_converges_to_bs() {
     BinomialTree tree(2000);
     Option call = make_call();
     MarketData mkt = make_market();
-    double bs_price   = bs.price(call, mkt);
+    double bs_price = bs.price(call, mkt);
     double tree_price = tree.price(call, mkt);
     CHECK_NEAR(tree_price, bs_price, 1e-2, "binomial -> BS (European call)");
 
@@ -105,8 +107,10 @@ static void test_binomial_converges_to_bs() {
                "American call (no div) == European");
 
     // American put should be worth at least the European put (early exercise).
-    Option eur_put = call; eur_put.type = OptionType::Put;
-    Option amer_put = eur_put; amer_put.exercise = Exercise::American;
+    Option eur_put = call;
+    eur_put.type = OptionType::Put;
+    Option amer_put = eur_put;
+    amer_put.exercise = Exercise::American;
     BinomialTree t2(2000);
     CHECK(t2.price(amer_put, mkt) >= t2.price(eur_put, mkt) - 1e-6,
           "American put >= European put");
@@ -138,12 +142,12 @@ static void test_parallel_mc_agrees() {
     BlackScholes bs;
     double bs_price = bs.price(call, mkt);
 
-    double serial   = monte_carlo_price(proc, call.payoff(), paths, disc, 7);
-    double parallel = monte_carlo_parallel(proc, call.payoff(), paths, disc,
-                                           8, 7);
+    double serial = monte_carlo_price(proc, call.payoff(), paths, disc, 7);
+    double parallel =
+        monte_carlo_parallel(proc, call.payoff(), paths, disc, 8, 7);
     // Both must land near BS; they use different stream layouts so they won't
     // be bit-identical, but both should agree with the analytic price.
-    CHECK_NEAR(serial,   bs_price, 5e-2, "serial MC near BS");
+    CHECK_NEAR(serial, bs_price, 5e-2, "serial MC near BS");
     CHECK_NEAR(parallel, bs_price, 5e-2, "parallel MC near BS");
 
     // Independent seeds must produce distinct streams.
@@ -193,23 +197,28 @@ static void test_portfolio_threadpool() {
 // --- 8. AD Greeks match the closed-form Greeks (plan §12) ---------------
 static void test_ad_greeks() {
     std::printf("test_ad_greeks\n");
-    BlackScholes bs;       // closed-form reference
-    BlackScholesAD ad;     // dual-number AD
+    BlackScholes bs;    // closed-form reference
+    BlackScholesAD ad;  // dual-number AD
     Option call = make_call();
     MarketData mkt = make_market();
 
     // Price agreement first.
-    CHECK_NEAR(ad.price(call, mkt), bs.price(call, mkt), 1e-10, "AD price == BS");
+    CHECK_NEAR(ad.price(call, mkt), bs.price(call, mkt), 1e-10,
+               "AD price == BS");
     // delta and vega are exact, so a tight tolerance is appropriate.
-    CHECK_NEAR(ad.delta(call, mkt), bs.delta(call, mkt), 1e-9, "AD delta == BS");
-    CHECK_NEAR(ad.vega(call, mkt),  bs.vega(call, mkt),  1e-9, "AD vega == BS");
-    // gamma via second-order duals must match the closed-form second derivative.
-    CHECK_NEAR(ad.gamma(call, mkt), bs.gamma(call, mkt), 1e-9, "AD gamma == BS");
+    CHECK_NEAR(ad.delta(call, mkt), bs.delta(call, mkt), 1e-9,
+               "AD delta == BS");
+    CHECK_NEAR(ad.vega(call, mkt), bs.vega(call, mkt), 1e-9, "AD vega == BS");
+    // gamma via second-order duals must match the closed-form second
+    // derivative.
+    CHECK_NEAR(ad.gamma(call, mkt), bs.gamma(call, mkt), 1e-9,
+               "AD gamma == BS");
 
     // rho for a call: positive, and check against a tight finite difference.
     double h = 1e-6;
     MarketData up = mkt, dn = mkt;
-    up.rate += h; dn.rate -= h;
+    up.rate += h;
+    dn.rate -= h;
     double fd_rho = (bs.price(call, up) - bs.price(call, dn)) / (2 * h);
     CHECK_NEAR(ad.rho(call, mkt), fd_rho, 1e-4, "AD rho vs finite-difference");
 }
@@ -218,7 +227,7 @@ static void test_ad_greeks() {
 static void test_exotics() {
     std::printf("test_exotics\n");
     MarketData mkt = make_market();
-    Option ref = make_call();   // S=K=100, r=5%, vol=20%, T=1
+    Option ref = make_call();  // S=K=100, r=5%, vol=20%, T=1
     double disc = std::exp(-mkt.rate * ref.maturity);
     GbmPathGenerator gen(mkt, ref.maturity, /*steps*/ 50);
     std::size_t paths = 400000;
@@ -234,7 +243,8 @@ static void test_exotics() {
           "Asian call cheaper than vanilla European");
 
     // Barrier parity: up-and-out + up-and-in == vanilla (same MC streams).
-    BarrierPayoff uo{OptionType::Call, ref.strike, 130.0, BarrierKind::UpAndOut};
+    BarrierPayoff uo{OptionType::Call, ref.strike, 130.0,
+                     BarrierKind::UpAndOut};
     BarrierPayoff ui{OptionType::Call, ref.strike, 130.0, BarrierKind::UpAndIn};
     double uo_px = monte_carlo_path_parallel(gen, uo, paths, disc, 0, 7);
     double ui_px = monte_carlo_path_parallel(gen, ui, paths, disc, 0, 7);
@@ -246,7 +256,8 @@ static void test_exotics() {
             return p(path.back());
         }
     } terminal{term};
-    double euro_path = monte_carlo_path_parallel(gen, terminal, paths, disc, 0, 7);
+    double euro_path =
+        monte_carlo_path_parallel(gen, terminal, paths, disc, 0, 7);
     CHECK_NEAR(uo_px + ui_px, euro_path, 1e-9,
                "barrier in/out parity (same streams)");
 
@@ -262,7 +273,7 @@ static void test_fixed_income() {
     // A bond whose coupon equals the (effective) discount rate should price
     // near par. Use a 5% coupon with a 5% continuous rate as a sanity band.
     MarketData mkt{100.0, 0.05, 0.0, 0.0};
-    Bond bond{/*face*/100.0, /*coupon*/0.05, /*maturity*/5.0, /*freq*/2};
+    Bond bond{/*face*/ 100.0, /*coupon*/ 0.05, /*maturity*/ 5.0, /*freq*/ 2};
     double pv = price_bond(bond, mkt);
     CHECK(pv > 95.0 && pv < 105.0, "5% bond near par at 5% rate");
 
@@ -272,7 +283,7 @@ static void test_fixed_income() {
                "zero-coupon bond = discounted face");
 
     // FX forward struck at the fair rate is worth ~0.
-    FxForward fwd{/*strike*/0.0, /*maturity*/1.0, /*foreign_rate*/0.03};
+    FxForward fwd{/*strike*/ 0.0, /*maturity*/ 1.0, /*foreign_rate*/ 0.03};
     MarketData fx{1.25, 0.05, 0.0, 0.0};  // spot 1.25, domestic 5%
     double fair = fx_forward_rate(fwd, fx);
     FxForward at_fair{fair, 1.0, 0.03};
@@ -294,9 +305,9 @@ static void test_implied_vol() {
     // intrinsic (or zero) to machine precision have a genuinely undefined
     // implied vol, and the solver correctly reports no solution for those.
     const double spot = 100.0, rate = 0.05, div = 0.0;
-    const double strikes[]    = {70, 85, 100, 115, 130};
+    const double strikes[] = {70, 85, 100, 115, 130};
     const double maturities[] = {0.25, 1.0, 2.0};
-    const double vols[]       = {0.10, 0.20, 0.45};
+    const double vols[] = {0.10, 0.20, 0.45};
 
     BlackScholesAD ad;
     bool all_ok = true;
@@ -307,7 +318,8 @@ static void test_implied_vol() {
                 Option call{OptionType::Call, Exercise::European, K, T};
                 MarketData mkt{spot, rate, sig, div};
                 double px = bs.price(call, mkt);
-                auto iv = implied_vol(OptionType::Call, px, spot, K, rate, T, div);
+                auto iv =
+                    implied_vol(OptionType::Call, px, spot, K, rate, T, div);
 
                 // Attainable vol precision is ~ tol / vega, so a tight 1e-5
                 // recovery is only meaningful where vega is well clear of
@@ -315,8 +327,10 @@ static void test_implied_vol() {
                 // implied vol is ill-conditioned (deep ITM/OTM).
                 const double vega = ad.vega(call, mkt);
                 if (vega > 1e-3) {
-                    if (!iv || std::fabs(*iv - sig) > 1e-5) all_ok = false;
-                    else ++recovered;
+                    if (!iv || std::fabs(*iv - sig) > 1e-5)
+                        all_ok = false;
+                    else
+                        ++recovered;
                 } else {
                     ++skipped_flat;  // undefined / ill-conditioned IV
                 }
@@ -336,8 +350,8 @@ static void test_implied_vol() {
         CHECK(iv && std::fabs(*iv - 0.10) < 1e-3,
               "ill-conditioned deep-OTM IV still close (1e-3)");
     }
-    std::printf("  (recovered %d, skipped %d flat/degenerate)\n",
-                recovered, skipped_flat);
+    std::printf("  (recovered %d, skipped %d flat/degenerate)\n", recovered,
+                skipped_flat);
 
     // Puts too.
     Option put{OptionType::Put, Exercise::European, 110.0, 1.0};
@@ -354,8 +368,8 @@ static void test_implied_vol() {
     CHECK(!below.has_value(), "below-intrinsic price -> no IV");
 
     // Price above the no-arbitrage upper bound (call <= spot).
-    auto above = implied_vol(OptionType::Call, spot + 5.0, spot, 100.0, rate,
-                             1.0, div);
+    auto above =
+        implied_vol(OptionType::Call, spot + 5.0, spot, 100.0, rate, 1.0, div);
     CHECK(!above.has_value(), "above-upper-bound price -> no IV");
 
     // Non-positive / non-finite price.
@@ -374,8 +388,8 @@ static void test_variance_reduction() {
     auto proc = GbmProcess::from_market(mkt, call.maturity);
 
     // Antithetic: with N pairs it still lands near the analytic price.
-    double anti = monte_carlo_price_antithetic(proc, call.payoff(), 1'000'000,
-                                               disc, 42);
+    double anti =
+        monte_carlo_price_antithetic(proc, call.payoff(), 1'000'000, disc, 42);
     CHECK_NEAR(anti, exact, 5e-2, "antithetic MC near analytic");
 
     // Control variate: with a perfectly-correlated control (the payoff itself)
@@ -404,8 +418,8 @@ struct BumpOnlyBS : BumpGreeks<BumpOnlyBS> {
 
 static void test_crtp_greeks() {
     std::printf("test_crtp_greeks\n");
-    BlackScholes bs;        // has analytic delta
-    BumpOnlyBS bumped;      // only CRTP bump delta
+    BlackScholes bs;    // has analytic delta
+    BumpOnlyBS bumped;  // only CRTP bump delta
     Option call = make_call();
     MarketData mkt = make_market();
 
@@ -440,8 +454,9 @@ static void test_variadic_portfolio() {
 
     // Total value equals the sum of the individual leg values (the fold).
     BlackScholes bs;
-    const double expected = bs.price(call, mkt) + bs.price(put, mkt) +
-                            price_bond(bond, MarketData{0.0, mkt.rate, 0.0, 0.0});
+    const double expected =
+        bs.price(call, mkt) + bs.price(put, mkt) +
+        price_bond(bond, MarketData{0.0, mkt.rate, 0.0, 0.0});
     // value() prices the bond with the same market; build the comparison the
     // same way the portfolio does (bond ignores spot/vol).
     const double got = book.value(mkt);
@@ -478,7 +493,8 @@ static void test_lazy_monte_carlo() {
     CHECK(count == 1000, "coroutine stream yields exactly N payoffs");
     // The streamed payoffs are real (positive mean for an ATM call), which also
     // uses `sum` so it isn't a dead accumulation.
-    CHECK(sum > 0.0 && std::isfinite(sum), "streamed payoffs accumulate sanely");
+    CHECK(sum > 0.0 && std::isfinite(sum),
+          "streamed payoffs accumulate sanely");
 }
 
 // --- 16. Sync primitives: latch + semaphore (§15.6) ---------------------
@@ -492,8 +508,8 @@ static void test_sync_primitives() {
     double exact = bs.price(call, mkt);
 
     // Latch-synchronized parallel MC lands near the analytic price.
-    double synced = monte_carlo_parallel_synced(proc, call.payoff(), 2'000'000,
-                                                disc, 4, 7);
+    double synced =
+        monte_carlo_parallel_synced(proc, call.payoff(), 2'000'000, disc, 4, 7);
     CHECK_NEAR(synced, exact, 5e-2, "latch-synced parallel MC near analytic");
 
     // Semaphore-bounded job runner: cap in-flight tasks, results still correct
@@ -530,41 +546,46 @@ static void test_invariants() {
     bool delta_band = true, mono_spot = true, mono_vol = true, mono_mat = true;
 
     for (double S : spots)
-      for (double K : strikes)
-        for (double vol : vols)
-          for (double T : mats) {
-            MarketData mkt{S, rate, vol, div};
-            Option call{OptionType::Call, Exercise::European, K, T};
-            Option put{OptionType::Put, Exercise::European, K, T};
-            const double c = bs.price(call, mkt);
-            const double p = bs.price(put, mkt);
+        for (double K : strikes)
+            for (double vol : vols)
+                for (double T : mats) {
+                    MarketData mkt{S, rate, vol, div};
+                    Option call{OptionType::Call, Exercise::European, K, T};
+                    Option put{OptionType::Put, Exercise::European, K, T};
+                    const double c = bs.price(call, mkt);
+                    const double p = bs.price(put, mkt);
 
-            // price >= 0
-            if (c < -1e-9 || p < -1e-9) nonneg = false;
-            // put-call parity: C - P = S e^{-qT} - K e^{-rT}
-            const double rhs = S * std::exp(-div * T) - K * std::exp(-rate * T);
-            if (std::fabs((c - p) - rhs) > 1e-6) parity = false;
-            // call >= discounted intrinsic on the forward
-            const double fwd_intrinsic =
-                std::max(S * std::exp(-div * T) - K * std::exp(-rate * T), 0.0);
-            if (c < fwd_intrinsic - 1e-6) intrinsic = false;
-            // call delta in [0, 1]
-            const double d = bs.delta(call, mkt);
-            if (d < -1e-9 || d > 1.0 + 1e-9) delta_band = false;
-            // American >= European (binomial), for a put where it can bite
-            Option amer_put{OptionType::Put, Exercise::American, K, T};
-            if (tree.price(amer_put, mkt) < tree.price(put, mkt) - 1e-6)
-                amer_ge = false;
+                    // price >= 0
+                    if (c < -1e-9 || p < -1e-9) nonneg = false;
+                    // put-call parity: C - P = S e^{-qT} - K e^{-rT}
+                    const double rhs =
+                        S * std::exp(-div * T) - K * std::exp(-rate * T);
+                    if (std::fabs((c - p) - rhs) > 1e-6) parity = false;
+                    // call >= discounted intrinsic on the forward
+                    const double fwd_intrinsic = std::max(
+                        S * std::exp(-div * T) - K * std::exp(-rate * T), 0.0);
+                    if (c < fwd_intrinsic - 1e-6) intrinsic = false;
+                    // call delta in [0, 1]
+                    const double d = bs.delta(call, mkt);
+                    if (d < -1e-9 || d > 1.0 + 1e-9) delta_band = false;
+                    // American >= European (binomial), for a put where it can
+                    // bite
+                    Option amer_put{OptionType::Put, Exercise::American, K, T};
+                    if (tree.price(amer_put, mkt) < tree.price(put, mkt) - 1e-6)
+                        amer_ge = false;
 
-            // monotonicity: call price increases in spot, vol, maturity
-            const double h = 1.0;
-            MarketData up_s = mkt; up_s.spot += h;
-            if (bs.price(call, up_s) < c - 1e-9) mono_spot = false;
-            MarketData up_v = mkt; up_v.vol += 0.01;
-            if (bs.price(call, up_v) < c - 1e-9) mono_vol = false;
-            Option longer = call; longer.maturity += 0.5;
-            if (bs.price(longer, mkt) < c - 1e-9) mono_mat = false;
-          }
+                    // monotonicity: call price increases in spot, vol, maturity
+                    const double h = 1.0;
+                    MarketData up_s = mkt;
+                    up_s.spot += h;
+                    if (bs.price(call, up_s) < c - 1e-9) mono_spot = false;
+                    MarketData up_v = mkt;
+                    up_v.vol += 0.01;
+                    if (bs.price(call, up_v) < c - 1e-9) mono_vol = false;
+                    Option longer = call;
+                    longer.maturity += 0.5;
+                    if (bs.price(longer, mkt) < c - 1e-9) mono_mat = false;
+                }
 
     CHECK(nonneg, "invariant: price >= 0");
     CHECK(parity, "invariant: put-call parity holds across the grid");
@@ -587,10 +608,14 @@ static void test_deterministic_mc() {
 
     // Same key must give a bit-identical price at any thread count — the whole
     // point of the counter-based RNG + fixed-block reduction.
-    double p1 = monte_carlo_parallel_deterministic(proc, call.payoff(), n, disc, 1, 42);
-    double p2 = monte_carlo_parallel_deterministic(proc, call.payoff(), n, disc, 2, 42);
-    double p4 = monte_carlo_parallel_deterministic(proc, call.payoff(), n, disc, 4, 42);
-    double p8 = monte_carlo_parallel_deterministic(proc, call.payoff(), n, disc, 8, 42);
+    double p1 =
+        monte_carlo_parallel_deterministic(proc, call.payoff(), n, disc, 1, 42);
+    double p2 =
+        monte_carlo_parallel_deterministic(proc, call.payoff(), n, disc, 2, 42);
+    double p4 =
+        monte_carlo_parallel_deterministic(proc, call.payoff(), n, disc, 4, 42);
+    double p8 =
+        monte_carlo_parallel_deterministic(proc, call.payoff(), n, disc, 8, 42);
     CHECK(p1 == p2 && p2 == p4 && p4 == p8,
           "deterministic MC: bit-identical across 1/2/4/8 threads");
 
@@ -618,7 +643,8 @@ static void test_pricing_result() {
     CHECK(se > 0.0, "result reports a positive standard error");
     const double half_width = r.confidence_95().value_or(-1.0);
     CHECK(half_width > 0.0, "95% half-width available for MC");
-    // The analytic price should sit within a few standard errors of the MC mean.
+    // The analytic price should sit within a few standard errors of the MC
+    // mean.
     CHECK(std::fabs(r.price - exact) < 5.0 * se,
           "analytic within 5 standard errors of MC mean");
     std::printf("  (MC price %.4f ± %.4f, exact %.4f)\n", r.price, half_width,
@@ -635,12 +661,14 @@ static void test_market_types() {
     CHECK_NEAR(flat.discount(2.0), std::exp(-0.05 * 2.0), 1e-12,
                "flat curve discount factor");
 
-    YieldCurve term = YieldCurve::from_pivots({1.0, 2.0, 5.0},
-                                              {0.03, 0.035, 0.045});
+    YieldCurve term =
+        YieldCurve::from_pivots({1.0, 2.0, 5.0}, {0.03, 0.035, 0.045});
     CHECK_NEAR(term.rate_at(1.0), 0.03, 1e-12, "curve hits pivot");
     CHECK_NEAR(term.rate_at(1.5), 0.0325, 1e-12, "curve interpolates midpoint");
-    CHECK_NEAR(term.rate_at(0.5), 0.03, 1e-12, "curve clamps below first pivot");
-    CHECK_NEAR(term.rate_at(10.0), 0.045, 1e-12, "curve clamps above last pivot");
+    CHECK_NEAR(term.rate_at(0.5), 0.03, 1e-12,
+               "curve clamps below first pivot");
+    CHECK_NEAR(term.rate_at(10.0), 0.045, 1e-12,
+               "curve clamps above last pivot");
 
     // VolSurface: flat vs smile lookup.
     VolSurface vflat = VolSurface::flat(0.20);
@@ -666,7 +694,8 @@ static void test_market_types() {
                "attached surface overrides flat vol");
 
     // A flat curve read through MarketData matches the scalar rate —
-    // proves the abstraction is a no-op when flat (the compatibility guarantee).
+    // proves the abstraction is a no-op when flat (the compatibility
+    // guarantee).
     Option call = make_call();
     MarketData scalar{100.0, 0.04, 0.25, 0.0};
     MarketData with_flat_curve = scalar;
@@ -687,7 +716,10 @@ static void test_calibration() {
     SviParams truth{0.04, 0.10, -0.4, 0.0, 0.10};
     std::vector<MarketQuote> quotes;
     std::vector<double> strikes;
-    for (double K = 70; K <= 130; K += 5) {
+    quotes.reserve(13);
+    strikes.reserve(13);
+    for (int i = 0; i <= 12; ++i) {  // strikes 70..130 step 5
+        const double K = 70.0 + i * 5.0;
         quotes.push_back({K, T, truth.vol(K, forward, T)});
         strikes.push_back(K);
     }
@@ -713,6 +745,7 @@ static void test_calibration() {
     std::vector<double> mats = {0.5, 1.0, 2.0, 5.0};
     std::vector<double> rates_true = {0.03, 0.035, 0.04, 0.045};
     std::vector<double> dfs;
+    dfs.reserve(mats.size());
     for (std::size_t i = 0; i < mats.size(); ++i)
         dfs.push_back(std::exp(-rates_true[i] * mats[i]));
     YieldCurve curve = bootstrap_curve(mats, dfs);
@@ -735,10 +768,12 @@ static void test_risk_scenarios() {
         Scenario{"vol+5pt", 0, 0, 0.05, 0},
     };
     auto table = run_scenarios(bs, call, base, scen, pool);
-    CHECK(table.size() == scen.size(), "scenario table has one row per scenario");
+    CHECK(table.size() == scen.size(),
+          "scenario table has one row per scenario");
 
     const double base_px = bs.price(call, base);
-    MarketData up_spot = base; up_spot.spot += 5.0;
+    MarketData up_spot = base;
+    up_spot.spot += 5.0;
     CHECK_NEAR(table[0].price, bs.price(call, up_spot), 1e-12,
                "scenario reprice matches manual");
     CHECK_NEAR(table[0].pnl, bs.price(call, up_spot) - base_px, 1e-12,
@@ -748,8 +783,10 @@ static void test_risk_scenarios() {
     // Scenario-derived Greeks match the closed-form Greeks (finite-difference
     // through the same engine).
     auto g = scenario_greeks(bs, call, base, pool);
-    CHECK_NEAR(g.delta, bs.delta(call, base), 1e-4, "scenario delta ~ analytic");
-    CHECK_NEAR(g.gamma, bs.gamma(call, base), 1e-2, "scenario gamma ~ analytic");
+    CHECK_NEAR(g.delta, bs.delta(call, base), 1e-4,
+               "scenario delta ~ analytic");
+    CHECK_NEAR(g.gamma, bs.gamma(call, base), 1e-2,
+               "scenario gamma ~ analytic");
     CHECK_NEAR(g.vega, bs.vega(call, base), 1e-2, "scenario vega ~ analytic");
 
     // Parallel scenario run agrees with a serial manual computation.

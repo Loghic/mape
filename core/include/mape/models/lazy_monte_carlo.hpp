@@ -27,7 +27,7 @@ generator<double> mc_payoff_stream(Process process, Pay payoff,
     std::mt19937_64 rng(seed);
     std::normal_distribution<double> norm(0.0, 1.0);
     for (std::size_t i = 0; i < paths; ++i) {
-        co_yield discount * payoff(process.terminal(norm(rng)));
+        co_yield discount* payoff(process.terminal(norm(rng)));
     }
 }
 

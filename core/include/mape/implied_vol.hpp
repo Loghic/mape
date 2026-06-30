@@ -24,13 +24,14 @@ namespace mape {
 // Method: Newton-Raphson seeded with a Brenner-Subrahmanyam ATM guess, using
 // the exact AD vega as the derivative. Falls back to bisection if Newton leaves
 // the bracket or stalls (vega -> 0 deep ITM/OTM), which keeps it robust.
-inline std::optional<double> implied_vol(
-    OptionType type, double market_price, double spot, double strike,
-    double rate, double maturity, double dividend = 0.0,
-    double tol = 1e-8, int max_iter = 100) {
-
-    if (!std::isfinite(market_price) || market_price <= 0.0 ||
-        spot <= 0.0 || strike <= 0.0 || maturity <= 0.0) {
+inline std::optional<double> implied_vol(OptionType type, double market_price,
+                                         double spot, double strike,
+                                         double rate, double maturity,
+                                         double dividend = 0.0,
+                                         double tol = 1e-8,
+                                         int max_iter = 100) {
+    if (!std::isfinite(market_price) || market_price <= 0.0 || spot <= 0.0 ||
+        strike <= 0.0 || maturity <= 0.0) {
         return std::nullopt;
     }
 
@@ -43,10 +44,10 @@ inline std::optional<double> implied_vol(
     double lower_bound, upper_bound;
     if (type == OptionType::Call) {
         lower_bound = std::max(fwd - strike * df_r, 0.0);
-        upper_bound = fwd;                       // call <= S e^{-qT}
+        upper_bound = fwd;  // call <= S e^{-qT}
     } else {
         lower_bound = std::max(strike * df_r - fwd, 0.0);
-        upper_bound = strike * df_r;             // put <= K e^{-rT}
+        upper_bound = strike * df_r;  // put <= K e^{-rT}
     }
     // Reject prices at/beyond the no-arbitrage boundary. The tolerance is
     // relative to the price scale: a deep in-the-money option legitimately
@@ -60,9 +61,8 @@ inline std::optional<double> implied_vol(
     }
     // Clamp a price marginally outside the bracket back onto it so the solver
     // has a valid target (handles floating-point dust at the boundary).
-    const double target =
-        std::clamp(market_price, lower_bound + boundary_eps,
-                   upper_bound - boundary_eps);
+    const double target = std::clamp(market_price, lower_bound + boundary_eps,
+                                     upper_bound - boundary_eps);
 
     BlackScholesAD ad;  // gives exact vega
     auto price_at = [&](double sigma) {
@@ -92,13 +92,16 @@ inline std::optional<double> implied_vol(
             return sigma;
         }
         // Maintain the bracket as Newton explores.
-        if (diff > 0.0) hi = sigma; else lo = sigma;
+        if (diff > 0.0)
+            hi = sigma;
+        else
+            lo = sigma;
 
         double next;
         if (v > 1e-12) {
-            next = sigma - diff / v;          // Newton step
+            next = sigma - diff / v;  // Newton step
         } else {
-            next = 0.5 * (lo + hi);           // vega vanished -> bisect
+            next = 0.5 * (lo + hi);  // vega vanished -> bisect
         }
         // If Newton jumps outside the bracket, fall back to bisection.
         if (!(next > lo && next < hi) || !std::isfinite(next)) {

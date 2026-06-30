@@ -30,8 +30,8 @@ inline std::uint64_t seed_for(std::uint64_t base, unsigned thread_index) {
 
 // Sum payoff over `n` simulated terminal values using the supplied RNG.
 template <StochasticProcess Process, Payoff Pay, typename Rng>
-double simulate_chunk(const Process& process, const Pay& payoff,
-                      std::size_t n, Rng& rng) {
+double simulate_chunk(const Process& process, const Pay& payoff, std::size_t n,
+                      Rng& rng) {
     std::normal_distribution<double> norm(0.0, 1.0);
     double sum = 0.0;
     for (std::size_t i = 0; i < n; ++i) {
@@ -51,10 +51,10 @@ double monte_carlo_parallel(const Process& process, const Pay& payoff,
     if (n_threads == 0)
         n_threads = std::max(1u, std::thread::hardware_concurrency());
     if (total_paths == 0) return 0.0;
-    n_threads = static_cast<unsigned>(
-        std::min<std::size_t>(n_threads, total_paths));
+    n_threads =
+        static_cast<unsigned>(std::min<std::size_t>(n_threads, total_paths));
 
-    const std::size_t chunk     = total_paths / n_threads;
+    const std::size_t chunk = total_paths / n_threads;
     const std::size_t remainder = total_paths % n_threads;
 
     std::vector<std::future<double>> futures;
@@ -65,8 +65,8 @@ double monte_carlo_parallel(const Process& process, const Pay& payoff,
         // total_paths samples (not chunk * n_threads).
         const std::size_t this_chunk = chunk + (t < remainder ? 1 : 0);
         const std::uint64_t seed = seed_for(base_seed, t);
-        futures.push_back(std::async(std::launch::async,
-            [&process, &payoff, this_chunk, seed] {
+        futures.push_back(std::async(
+            std::launch::async, [&process, &payoff, this_chunk, seed] {
                 std::mt19937_64 rng(seed);  // independent stream per thread
                 return simulate_chunk(process, payoff, this_chunk, rng);
             }));
@@ -103,10 +103,10 @@ double monte_carlo_path_parallel(const GbmPathGenerator& gen, const Pay& payoff,
     if (n_threads == 0)
         n_threads = std::max(1u, std::thread::hardware_concurrency());
     if (total_paths == 0) return 0.0;
-    n_threads = static_cast<unsigned>(
-        std::min<std::size_t>(n_threads, total_paths));
+    n_threads =
+        static_cast<unsigned>(std::min<std::size_t>(n_threads, total_paths));
 
-    const std::size_t chunk     = total_paths / n_threads;
+    const std::size_t chunk = total_paths / n_threads;
     const std::size_t remainder = total_paths % n_threads;
 
     std::vector<std::future<double>> futures;
@@ -114,8 +114,8 @@ double monte_carlo_path_parallel(const GbmPathGenerator& gen, const Pay& payoff,
     for (unsigned t = 0; t < n_threads; ++t) {
         const std::size_t this_chunk = chunk + (t < remainder ? 1 : 0);
         const std::uint64_t seed = seed_for(base_seed, t);
-        futures.push_back(std::async(std::launch::async,
-            [&gen, &payoff, this_chunk, seed] {
+        futures.push_back(
+            std::async(std::launch::async, [&gen, &payoff, this_chunk, seed] {
                 std::mt19937_64 rng(seed);
                 return simulate_path_chunk(gen, payoff, this_chunk, rng);
             }));
@@ -138,16 +138,14 @@ double monte_carlo_path_parallel(const GbmPathGenerator& gen, const Pay& payoff,
 //      last bit wobbles. We sum each block, then sum the block totals in block
 //      order; that ordering is the same whether 1 thread or 8 compute them.
 template <StochasticProcess Process, Payoff Pay>
-double monte_carlo_parallel_deterministic(const Process& process,
-                                          const Pay& payoff,
-                                          std::size_t total_paths,
-                                          double discount, unsigned n_threads = 0,
-                                          std::uint64_t key = 0x5EED) {
+double monte_carlo_parallel_deterministic(
+    const Process& process, const Pay& payoff, std::size_t total_paths,
+    double discount, unsigned n_threads = 0, std::uint64_t key = 0x5EED) {
     if (n_threads == 0)
         n_threads = std::max(1u, std::thread::hardware_concurrency());
     if (total_paths == 0) return 0.0;
-    n_threads = static_cast<unsigned>(
-        std::min<std::size_t>(n_threads, total_paths));
+    n_threads =
+        static_cast<unsigned>(std::min<std::size_t>(n_threads, total_paths));
 
     // Fixed block size, independent of thread count, so the reduction grouping
     // is identical for any n_threads. The number of blocks depends only on
@@ -161,9 +159,9 @@ double monte_carlo_parallel_deterministic(const Process& process,
     futures.reserve(n_threads);
     std::atomic<std::size_t> next_block{0};
     for (unsigned t = 0; t < n_threads; ++t) {
-        futures.push_back(std::async(std::launch::async,
-            [&process, &payoff, &block_sums, &next_block, key, total_paths,
-             n_blocks] {
+        futures.push_back(std::async(
+            std::launch::async, [&process, &payoff, &block_sums, &next_block,
+                                 key, total_paths, n_blocks] {
                 for (;;) {
                     const std::size_t b = next_block.fetch_add(1);
                     if (b >= n_blocks) break;

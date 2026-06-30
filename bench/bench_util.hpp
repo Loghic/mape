@@ -32,7 +32,7 @@ struct Stats {
     double median_ms = 0.0;
     double min_ms = 0.0;
     double max_ms = 0.0;
-    int    reps = 0;
+    int reps = 0;
 };
 
 // Time `fn` `reps` times after `warmup` untimed runs; return median/min/max in
@@ -66,7 +66,8 @@ inline Stats measure(const std::function<void()>& fn, int reps = 7,
 class CsvWriter {
 public:
     CsvWriter() {
-        std::printf("model,threads,paths,median_ms,speedup,efficiency,std_error\n");
+        std::printf(
+            "model,threads,paths,median_ms,speedup,efficiency,std_error\n");
     }
     void row(const char* model, unsigned threads, std::size_t paths,
              double median_ms, double speedup, double efficiency,

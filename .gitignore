@@ -2,11 +2,13 @@
 /build/
 build_mape_tests
 
-# Benchmark output
+# Benchmark output (timestamped runs); the committed baseline.csv is kept.
 results.csv
 *.bench.csv
-/bench/results/
+/bench/results/*
+!/bench/results/baseline.csv
 build_mape_bench
+fuzz_c_api
 
 # Editor compilation database (symlinked from build/)
 /compile_commands.json

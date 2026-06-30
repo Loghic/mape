@@ -10,9 +10,9 @@
 #include "mape/market_types.hpp"
 
 // Calibration framework (plan §16.3). Generalises the single-point implied_vol
-// into fitting *many* quotes at once: an SVI volatility smile and a bootstrapped
-// discount curve. This closes the market -> calibrate -> price loop, and turns
-// the GUI's raw implied-vol points into a fitted surface.
+// into fitting *many* quotes at once: an SVI volatility smile and a
+// bootstrapped discount curve. This closes the market -> calibrate -> price
+// loop, and turns the GUI's raw implied-vol points into a fitted surface.
 //
 // Dependency-free and header-only like the rest of the core: the nonlinear SVI
 // fit uses a small built-in Nelder-Mead simplex (no external optimiser).
@@ -54,9 +54,9 @@ struct SviParams {
 
 struct CalibrationResult {
     SviParams params;
-    double rmse = 0.0;      // root-mean-square vol error across quotes
-    int    iterations = 0;
-    bool   converged = false;
+    double rmse = 0.0;  // root-mean-square vol error across quotes
+    int iterations = 0;
+    bool converged = false;
 };
 
 namespace detail {
@@ -103,7 +103,8 @@ inline CalibrationResult calibrate_svi(std::span<const MarketQuote> quotes,
     double avg_var = 0.0;
     for (const MarketQuote& q : quotes)
         avg_var += q.implied_vol * q.implied_vol * q.maturity;
-    avg_var = quotes.empty() ? 0.04 : avg_var / static_cast<double>(quotes.size());
+    avg_var =
+        quotes.empty() ? 0.04 : avg_var / static_cast<double>(quotes.size());
 
     std::array<double, 5> start{avg_var, 0.1, -0.3, 0.0, 0.1};
 
@@ -121,8 +122,8 @@ inline CalibrationResult calibrate_svi(std::span<const MarketQuote> quotes,
     simplex[0] = start;
     for (int i = 0; i < N; ++i) {
         simplex[i + 1] = start;
-        const double step = start[i] != 0.0 ? 0.05 * std::fabs(start[i]) + 0.05
-                                            : 0.05;
+        const double step =
+            start[i] != 0.0 ? 0.05 * std::fabs(start[i]) + 0.05 : 0.05;
         simplex[i + 1][i] += step;
     }
     for (int i = 0; i < kV; ++i) fval[i] = objective(simplex[i]);
@@ -158,18 +159,26 @@ inline CalibrationResult calibrate_svi(std::span<const MarketQuote> quotes,
         if (fr < fval[0]) {
             auto xe = reflect(alpha * gamma);
             const double fe = objective(xe);
-            if (fe < fr) { simplex[kWorst] = xe; fval[kWorst] = fe; }
-            else { simplex[kWorst] = xr; fval[kWorst] = fr; }
+            if (fe < fr) {
+                simplex[kWorst] = xe;
+                fval[kWorst] = fe;
+            } else {
+                simplex[kWorst] = xr;
+                fval[kWorst] = fr;
+            }
         } else if (fr < fval[kWorst - 1]) {
-            simplex[kWorst] = xr; fval[kWorst] = fr;
+            simplex[kWorst] = xr;
+            fval[kWorst] = fr;
         } else {
             // Contraction.
             std::array<double, N> xc{};
             for (int d = 0; d < N; ++d)
                 xc[d] = centroid[d] + rho * (simplex[kWorst][d] - centroid[d]);
             const double fc = objective(xc);
-            if (fc < fval[kWorst]) { simplex[kWorst] = xc; fval[kWorst] = fc; }
-            else {
+            if (fc < fval[kWorst]) {
+                simplex[kWorst] = xc;
+                fval[kWorst] = fc;
+            } else {
                 // Shrink toward the best vertex.
                 for (int i = 1; i < kV; ++i) {
                     for (int d = 0; d < N; ++d)
@@ -219,8 +228,7 @@ inline YieldCurve bootstrap_curve(std::span<const double> maturities,
                                   std::span<const double> discount_factors) {
     std::vector<double> t;
     std::vector<double> r;
-    const std::size_t n =
-        std::min(maturities.size(), discount_factors.size());
+    const std::size_t n = std::min(maturities.size(), discount_factors.size());
     t.reserve(n);
     r.reserve(n);
     for (std::size_t i = 0; i < n; ++i) {

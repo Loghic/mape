@@ -16,7 +16,7 @@ namespace mape {
 // Arithmetic-average Asian option: strike against the mean of the path.
 struct AsianPayoff {
     OptionType type;
-    double     strike;
+    double strike;
 
     double operator()(std::span<const double> path) const {
         if (path.empty()) return 0.0;
@@ -34,9 +34,9 @@ enum class BarrierKind { UpAndOut, DownAndOut, UpAndIn, DownAndIn };
 // barrier is breached; knock-in: only alive if breached. Monitored discretely
 // at each path step (continuous monitoring is a refinement, not done here).
 struct BarrierPayoff {
-    OptionType  type;
-    double      strike;
-    double      barrier;
+    OptionType type;
+    double strike;
+    double barrier;
     BarrierKind kind;
 
     double operator()(std::span<const double> path) const {

@@ -41,9 +41,9 @@ public:
 
 private:
     std::size_t steps_;
-    double      spot0_;
-    double      drift_;
-    double      diffusion_;
+    double spot0_;
+    double drift_;
+    double diffusion_;
 };
 
 // Single-threaded path Monte Carlo: average a PathPayoff over simulated GBM

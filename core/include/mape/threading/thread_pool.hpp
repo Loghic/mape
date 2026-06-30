@@ -29,7 +29,7 @@ public:
             workers_.emplace_back([this] { worker_loop(); });
     }
 
-    ThreadPool(const ThreadPool&)            = delete;
+    ThreadPool(const ThreadPool&) = delete;
     ThreadPool& operator=(const ThreadPool&) = delete;
 
     ~ThreadPool() {
@@ -46,7 +46,8 @@ public:
     template <typename F>
     auto submit(F&& f) -> std::future<std::invoke_result_t<F>> {
         using R = std::invoke_result_t<F>;
-        auto task = std::make_shared<std::packaged_task<R()>>(std::forward<F>(f));
+        auto task =
+            std::make_shared<std::packaged_task<R()>>(std::forward<F>(f));
         std::future<R> fut = task->get_future();
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -73,11 +74,11 @@ private:
         }
     }
 
-    std::vector<std::thread>          workers_;
+    std::vector<std::thread> workers_;
     std::queue<std::function<void()>> tasks_;
-    std::mutex                        mutex_;
-    std::condition_variable           cv_;
-    bool                              stop_ = false;
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    bool stop_ = false;
 };
 
 }  // namespace mape

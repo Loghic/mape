@@ -24,8 +24,8 @@ mape::Exercise to_exercise(MapeExercise e) {
 }
 
 bool valid_market(double spot, double vol, double maturity) {
-    return spot > 0.0 && vol >= 0.0 && maturity > 0.0 &&
-           std::isfinite(spot) && std::isfinite(vol) && std::isfinite(maturity);
+    return spot > 0.0 && vol >= 0.0 && maturity > 0.0 && std::isfinite(spot) &&
+           std::isfinite(vol) && std::isfinite(maturity);
 }
 
 double price_with_model(MapeModel model, const mape::Option& opt,
@@ -73,7 +73,8 @@ MapeStatus mape_price_ex(MapeEngine* engine, MapeModel model,
     if (!valid_market(spot, vol, maturity) || strike <= 0.0)
         return MAPE_ERR_BAD_INPUT;
     try {
-        mape::Option opt{to_type(type), to_exercise(exercise), strike, maturity};
+        mape::Option opt{to_type(type), to_exercise(exercise), strike,
+                         maturity};
         mape::MarketData mkt{spot, rate, vol, dividend};
         *out_price = price_with_model(model, opt, mkt);
         return MAPE_OK;
@@ -102,26 +103,30 @@ static double greek(MapeEngine* engine, MapeOptionType type, double spot,
                          maturity};
         mape::MarketData mkt{spot, rate, vol, dividend};
         switch (which) {
-            case 0: return bs.delta(opt, mkt);
-            case 1: return bs.gamma(opt, mkt);
-            case 2: return bs.vega(opt, mkt);
-            default: return std::nan("");
+            case 0:
+                return bs.delta(opt, mkt);
+            case 1:
+                return bs.gamma(opt, mkt);
+            case 2:
+                return bs.vega(opt, mkt);
+            default:
+                return std::nan("");
         }
     } catch (...) {
         return std::nan("");
     }
 }
 
-double mape_delta(MapeEngine* e, MapeOptionType t, double s, double k,
-                  double r, double v, double tm, double q) {
+double mape_delta(MapeEngine* e, MapeOptionType t, double s, double k, double r,
+                  double v, double tm, double q) {
     return greek(e, t, s, k, r, v, tm, q, 0);
 }
-double mape_gamma(MapeEngine* e, MapeOptionType t, double s, double k,
-                  double r, double v, double tm, double q) {
+double mape_gamma(MapeEngine* e, MapeOptionType t, double s, double k, double r,
+                  double v, double tm, double q) {
     return greek(e, t, s, k, r, v, tm, q, 1);
 }
-double mape_vega(MapeEngine* e, MapeOptionType t, double s, double k,
-                 double r, double v, double tm, double q) {
+double mape_vega(MapeEngine* e, MapeOptionType t, double s, double k, double r,
+                 double v, double tm, double q) {
     return greek(e, t, s, k, r, v, tm, q, 2);
 }
 
@@ -179,10 +184,14 @@ double mape_ad_greek(MapeEngine* engine, MapeGreek greek, MapeOptionType type,
                          maturity};
         mape::MarketData mkt{spot, rate, vol, dividend};
         switch (greek) {
-            case MAPE_GREEK_DELTA: return ad.delta(opt, mkt);
-            case MAPE_GREEK_VEGA:  return ad.vega(opt, mkt);
-            case MAPE_GREEK_RHO:   return ad.rho(opt, mkt);
-            case MAPE_GREEK_GAMMA: return ad.gamma(opt, mkt);
+            case MAPE_GREEK_DELTA:
+                return ad.delta(opt, mkt);
+            case MAPE_GREEK_VEGA:
+                return ad.vega(opt, mkt);
+            case MAPE_GREEK_RHO:
+                return ad.rho(opt, mkt);
+            case MAPE_GREEK_GAMMA:
+                return ad.gamma(opt, mkt);
         }
         return std::nan("");
     } catch (...) {
@@ -217,11 +226,19 @@ double mape_price_exotic(MapeEngine* engine, MapeExotic exotic,
             case MAPE_EXOTIC_BARRIER: {
                 mape::BarrierKind bk;
                 switch (barrier_kind) {
-                    case MAPE_BARRIER_DOWN_OUT: bk = mape::BarrierKind::DownAndOut; break;
-                    case MAPE_BARRIER_UP_IN:    bk = mape::BarrierKind::UpAndIn;    break;
-                    case MAPE_BARRIER_DOWN_IN:  bk = mape::BarrierKind::DownAndIn;  break;
+                    case MAPE_BARRIER_DOWN_OUT:
+                        bk = mape::BarrierKind::DownAndOut;
+                        break;
+                    case MAPE_BARRIER_UP_IN:
+                        bk = mape::BarrierKind::UpAndIn;
+                        break;
+                    case MAPE_BARRIER_DOWN_IN:
+                        bk = mape::BarrierKind::DownAndIn;
+                        break;
                     case MAPE_BARRIER_UP_OUT:
-                    default:                    bk = mape::BarrierKind::UpAndOut;   break;
+                    default:
+                        bk = mape::BarrierKind::UpAndOut;
+                        break;
                 }
                 mape::BarrierPayoff p{ot, strike, barrier, bk};
                 return mape::monte_carlo_path_parallel(gen, p, paths, discount);
@@ -300,7 +317,8 @@ MapeStatus mape_convergence(MapeEngine* engine, MapeModel model,
             switch (model) {
                 case MAPE_MODEL_BINOMIAL:
                     out_prices[i] =
-                        mape::BinomialTree{static_cast<int>(sz)}.price(opt, mkt);
+                        mape::BinomialTree{static_cast<int>(sz)}.price(opt,
+                                                                       mkt);
                     break;
                 case MAPE_MODEL_MONTE_CARLO:
                     out_prices[i] =
@@ -318,8 +336,6 @@ MapeStatus mape_convergence(MapeEngine* engine, MapeModel model,
     }
 }
 
-const char* mape_version(void) {
-    return "0.1.0";
-}
+const char* mape_version(void) { return "0.1.0"; }
 
 }  // extern "C"

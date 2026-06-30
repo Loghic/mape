@@ -16,13 +16,12 @@ namespace mape {
 // under the risk-neutral measure. Satisfies the StochasticProcess concept.
 struct GbmProcess {
     double spot;
-    double drift;   // (r - q - 0.5*sigma^2) * T
+    double drift;      // (r - q - 0.5*sigma^2) * T
     double diffusion;  // sigma * sqrt(T)
 
     static GbmProcess from_market(const MarketData& mkt, double T) {
         return GbmProcess{
-            mkt.spot,
-            (mkt.rate - mkt.dividend - 0.5 * mkt.vol * mkt.vol) * T,
+            mkt.spot, (mkt.rate - mkt.dividend - 0.5 * mkt.vol * mkt.vol) * T,
             mkt.vol * std::sqrt(T)};
     }
 
@@ -61,8 +60,8 @@ double monte_carlo_price_antithetic(const Process& process, const Pay& payoff,
     double sum = 0.0;
     for (std::size_t i = 0; i < pairs; ++i) {
         const double z = norm(rng);
-        sum += 0.5 * (payoff(process.terminal(z)) +
-                      payoff(process.terminal(-z)));
+        sum +=
+            0.5 * (payoff(process.terminal(z)) + payoff(process.terminal(-z)));
     }
     return discount * (sum / static_cast<double>(pairs));
 }
@@ -70,20 +69,22 @@ double monte_carlo_price_antithetic(const Process& process, const Pay& payoff,
 // Model wrapper so MonteCarlo plugs into Pricer<MonteCarlo> like the others.
 class MonteCarlo {
 public:
-    explicit MonteCarlo(std::size_t paths = 200000, std::uint64_t seed = 12345ULL)
+    explicit MonteCarlo(std::size_t paths = 200000,
+                        std::uint64_t seed = 12345ULL)
         : paths_(paths), seed_(seed) {}
 
     double price(const Option& opt, const MarketData& mkt) const {
         const auto process = GbmProcess::from_market(mkt, opt.maturity);
         const double discount = std::exp(-mkt.rate * opt.maturity);
-        return monte_carlo_price(process, opt.payoff(), paths_, discount, seed_);
+        return monte_carlo_price(process, opt.payoff(), paths_, discount,
+                                 seed_);
     }
 
-    std::size_t   paths() const noexcept { return paths_; }
-    std::uint64_t seed()  const noexcept { return seed_; }
+    std::size_t paths() const noexcept { return paths_; }
+    std::uint64_t seed() const noexcept { return seed_; }
 
 private:
-    std::size_t   paths_;
+    std::size_t paths_;
     std::uint64_t seed_;
 };
 

@@ -17,7 +17,7 @@ namespace mape {
 // redemption of face at maturity, discounted continuously at MarketData.rate.
 inline double price_bond(const Bond& bond, const MarketData& mkt) {
     const double r = mkt.rate;
-    const int    f = bond.frequency > 0 ? bond.frequency : 1;
+    const int f = bond.frequency > 0 ? bond.frequency : 1;
     const double coupon_amt = bond.face * bond.coupon / static_cast<double>(f);
     const double dt = 1.0 / static_cast<double>(f);
 

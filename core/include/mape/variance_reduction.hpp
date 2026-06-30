@@ -42,7 +42,6 @@ struct ControlVariateResult {
 inline ControlVariateResult monte_carlo_control_variate(
     const Option& opt, const MarketData& mkt, std::size_t paths,
     std::uint64_t seed = 12345ULL) {
-
     const GbmProcess process = GbmProcess::from_market(mkt, opt.maturity);
     const double discount = std::exp(-mkt.rate * opt.maturity);
     const VanillaPayoff payoff = opt.payoff();
@@ -54,11 +53,12 @@ inline ControlVariateResult monte_carlo_control_variate(
     std::normal_distribution<double> norm(0.0, 1.0);
 
     // Accumulate the discounted payoff (which is both Y and the control X here)
-    // and the statistics needed for the optimal coefficient c = cov(X,Y)/var(X).
-    double sum_y = 0.0;     // Σ Y_i
-    double sum_x = 0.0;     // Σ X_i
-    double sum_xx = 0.0;    // Σ X_i^2
-    double sum_xy = 0.0;    // Σ X_i Y_i
+    // and the statistics needed for the optimal coefficient c =
+    // cov(X,Y)/var(X).
+    double sum_y = 0.0;   // Σ Y_i
+    double sum_x = 0.0;   // Σ X_i
+    double sum_xx = 0.0;  // Σ X_i^2
+    double sum_xy = 0.0;  // Σ X_i Y_i
     for (std::size_t i = 0; i < paths; ++i) {
         const double term = process.terminal(norm(rng));
         const double disc_payoff = discount * payoff(term);

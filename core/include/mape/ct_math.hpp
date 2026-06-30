@@ -66,8 +66,14 @@ constexpr double log_ct(double x) {
     constexpr double LN2 = 0.6931471805599453;
     int e = 0;
     double m = x;
-    while (m >= 2.0) { m *= 0.5; ++e; }
-    while (m < 1.0)  { m *= 2.0; --e; }
+    while (m >= 2.0) {
+        m *= 0.5;
+        ++e;
+    }
+    while (m < 1.0) {
+        m *= 2.0;
+        --e;
+    }
     // m in [1, 2); t = (m-1)/(m+1) in [0, 1/3).
     const double t = (m - 1.0) / (m + 1.0);
     const double t2 = t * t;
@@ -89,7 +95,7 @@ struct ErfCoeffs {
 
 // consteval guarantees this table is built at compile time, never at runtime.
 consteval ErfCoeffs as_erf_coeffs() {
-    return ErfCoeffs{0.3275911, 0.254829592, -0.284496736,
+    return ErfCoeffs{0.3275911,   0.254829592,  -0.284496736,
                      1.421413741, -1.453152027, 1.061405429};
 }
 
@@ -113,18 +119,18 @@ constexpr double erfc_ct(double x) { return 1.0 - erf_ct(x); }
 struct CtDouble {
     double v = 0.0;
     constexpr CtDouble() = default;
-    constexpr CtDouble(double x) : v(x) {}     // implicit, matches `T(0.5)` etc.
+    constexpr CtDouble(double x) : v(x) {}  // implicit, matches `T(0.5)` etc.
     constexpr explicit operator double() const { return v; }
 };
 
 constexpr CtDouble operator+(CtDouble a, CtDouble b) { return {a.v + b.v}; }
 constexpr CtDouble operator-(CtDouble a, CtDouble b) { return {a.v - b.v}; }
-constexpr CtDouble operator-(CtDouble a)             { return {-a.v}; }
+constexpr CtDouble operator-(CtDouble a) { return {-a.v}; }
 constexpr CtDouble operator*(CtDouble a, CtDouble b) { return {a.v * b.v}; }
 constexpr CtDouble operator/(CtDouble a, CtDouble b) { return {a.v / b.v}; }
 
-constexpr CtDouble exp(CtDouble a)  { return {exp_ct(a.v)}; }
-constexpr CtDouble log(CtDouble a)  { return {log_ct(a.v)}; }
+constexpr CtDouble exp(CtDouble a) { return {exp_ct(a.v)}; }
+constexpr CtDouble log(CtDouble a) { return {log_ct(a.v)}; }
 constexpr CtDouble sqrt(CtDouble a) { return {sqrt_ct(a.v)}; }
 constexpr CtDouble erfc(CtDouble a) { return {erfc_ct(a.v)}; }
 

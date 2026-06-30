@@ -21,10 +21,10 @@ namespace mape {
 // benchmark harness, the GUI) read what's present.
 struct PricingResult {
     double price = 0.0;
-    std::string_view model = "";          // which model produced it
-    std::optional<std::size_t> paths;     // MC only
-    std::optional<double> std_error;      // MC only: standard error of the mean
-    std::optional<unsigned> threads;      // parallel runs only
+    std::string_view model = "";       // which model produced it
+    std::optional<std::size_t> paths;  // MC only
+    std::optional<double> std_error;   // MC only: standard error of the mean
+    std::optional<unsigned> threads;   // parallel runs only
 
     // Convenience: a 95%-ish confidence half-width (1.96 * std_error), when an
     // error estimate exists.

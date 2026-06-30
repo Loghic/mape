@@ -58,9 +58,9 @@ constexpr double discount_factor(double rate, double t) {
 // than producing a runtime error. There is no runtime fallback.
 struct OptionSpec {
     OptionType type;
-    double     strike;
-    double     vol;
-    double     maturity;
+    double strike;
+    double vol;
+    double maturity;
 };
 
 consteval OptionSpec make_option(OptionType type, double strike, double vol,

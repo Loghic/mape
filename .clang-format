@@ -1,0 +1,9 @@
+# clang-format style for the C++ core + FFI (plan §16.7).
+# Based on Google style, which already closely matches the codebase:
+# 4-space indent, 80-column limit, attached braces.
+BasedOnStyle: Google
+IndentWidth: 4
+ColumnLimit: 80
+DerivePointerAlignment: false
+PointerAlignment: Left
+AccessModifierOffset: -4

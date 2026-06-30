@@ -48,10 +48,9 @@ struct ScenarioResult {
 // the thread pool. Returns one row per scenario (order preserved), each with
 // the repriced value and the P&L versus the base price.
 template <PricingModel Model>
-std::vector<ScenarioResult> run_scenarios(const Model& model, const Option& opt,
-                                          const MarketData& base,
-                                          const std::vector<Scenario>& scenarios,
-                                          ThreadPool& pool) {
+std::vector<ScenarioResult> run_scenarios(
+    const Model& model, const Option& opt, const MarketData& base,
+    const std::vector<Scenario>& scenarios, ThreadPool& pool) {
     const double base_price = model.price(opt, base);
 
     std::vector<std::future<double>> futures;
@@ -122,7 +121,8 @@ PortfolioGreeks scenario_greeks(const Model& model, const Option& opt,
     const auto sc = greek_bump_scenarios(h_spot, h_vol, h_rate);
     const auto t = run_scenarios(model, opt, base, sc, pool);
     const double base_price = model.price(opt, base);
-    // t[0]=spot_up, [1]=spot_down, [2]=vol_up, [3]=vol_down, [4]=rate_up, [5]=rate_down
+    // t[0]=spot_up, [1]=spot_down, [2]=vol_up, [3]=vol_down, [4]=rate_up,
+    // [5]=rate_down
     PortfolioGreeks g;
     g.delta = (t[0].price - t[1].price) / (2.0 * h_spot);
     g.gamma = (t[0].price - 2.0 * base_price + t[1].price) / (h_spot * h_spot);

@@ -12,8 +12,8 @@ static void check_near(const char* msg, double got, double want, double tol) {
     double d = fabs(got - want);
     if (d > tol) {
         ++failures;
-        printf("  FAIL: %s got %.6f want %.6f (|d|=%.6g > %.6g)\n",
-               msg, got, want, d, tol);
+        printf("  FAIL: %s got %.6f want %.6f (|d|=%.6g > %.6g)\n", msg, got,
+               want, d, tol);
     } else {
         printf("  ok:   %s = %.6f\n", msg, got);
     }
@@ -23,9 +23,13 @@ int main(void) {
     printf("mape C ABI smoke test (v%s)\n", mape_version());
 
     MapeEngine* e = mape_create();
-    if (!e) { printf("FAIL: mape_create returned NULL\n"); return 1; }
+    if (!e) {
+        printf("FAIL: mape_create returned NULL\n");
+        return 1;
+    }
 
-    /* ATM call: S=K=100, r=5%, vol=20%, T=1, no div -> ~10.4506 (Black-Scholes) */
+    /* ATM call: S=K=100, r=5%, vol=20%, T=1, no div -> ~10.4506 (Black-Scholes)
+     */
     double bs = mape_price(e, MAPE_MODEL_BLACK_SCHOLES, MAPE_CALL,
                            MAPE_EUROPEAN, 100, 100, 0.05, 0.20, 1.0, 0.0);
     check_near("black-scholes call", bs, 10.4506, 1e-3);
@@ -43,53 +47,65 @@ int main(void) {
     /* Greeks sign sanity. */
     double delta = mape_delta(e, MAPE_CALL, 100, 100, 0.05, 0.20, 1.0, 0.0);
     if (!(delta > 0.0 && delta < 1.0)) {
-        ++failures; printf("  FAIL: call delta out of (0,1): %.6f\n", delta);
+        ++failures;
+        printf("  FAIL: call delta out of (0,1): %.6f\n", delta);
     } else {
         printf("  ok:   delta = %.6f\n", delta);
     }
 
     /* Bad input -> NaN via plain entry, error code via _ex. */
-    double bad = mape_price(e, MAPE_MODEL_BLACK_SCHOLES, MAPE_CALL,
-                            MAPE_EUROPEAN, 100, 100, 0.05, 0.20, /*T*/-1.0, 0.0);
-    if (!isnan(bad)) { ++failures; printf("  FAIL: bad maturity not NaN\n"); }
-    else printf("  ok:   invalid input returns NaN\n");
+    double bad =
+        mape_price(e, MAPE_MODEL_BLACK_SCHOLES, MAPE_CALL, MAPE_EUROPEAN, 100,
+                   100, 0.05, 0.20, /*T*/ -1.0, 0.0);
+    if (!isnan(bad)) {
+        ++failures;
+        printf("  FAIL: bad maturity not NaN\n");
+    } else
+        printf("  ok:   invalid input returns NaN\n");
 
     double px = 0;
-    MapeStatus st = mape_price_ex(NULL, MAPE_MODEL_BLACK_SCHOLES, MAPE_CALL,
-                                  MAPE_EUROPEAN, 100, 100, 0.05, 0.2, 1, 0, &px);
+    MapeStatus st =
+        mape_price_ex(NULL, MAPE_MODEL_BLACK_SCHOLES, MAPE_CALL, MAPE_EUROPEAN,
+                      100, 100, 0.05, 0.2, 1, 0, &px);
     if (st != MAPE_ERR_NULL_HANDLE) {
-        ++failures; printf("  FAIL: NULL engine not reported (%d)\n", st);
+        ++failures;
+        printf("  FAIL: NULL engine not reported (%d)\n", st);
     } else {
         printf("  ok:   NULL handle reported\n");
     }
 
     /* Threaded portfolio path. */
-    double strikes[5]    = {80, 90, 100, 110, 120};
+    double strikes[5] = {80, 90, 100, 110, 120};
     double maturities[5] = {1, 1, 1, 1, 1};
-    double out[5]        = {0};
+    double out[5] = {0};
     st = mape_price_portfolio(e, MAPE_MODEL_BLACK_SCHOLES, MAPE_CALL,
-                              MAPE_EUROPEAN, 100, 0.05, 0.20, 0.0,
-                              strikes, maturities, 5, out);
-    if (st != MAPE_OK) { ++failures; printf("  FAIL: portfolio status %d\n", st); }
+                              MAPE_EUROPEAN, 100, 0.05, 0.20, 0.0, strikes,
+                              maturities, 5, out);
+    if (st != MAPE_OK) {
+        ++failures;
+        printf("  FAIL: portfolio status %d\n", st);
+    }
     /* Lower strike must be worth more for a call. */
     if (!(out[0] > out[4])) {
-        ++failures; printf("  FAIL: portfolio monotonicity\n");
+        ++failures;
+        printf("  FAIL: portfolio monotonicity\n");
     } else {
-        printf("  ok:   portfolio[80]=%.4f > portfolio[120]=%.4f\n",
-               out[0], out[4]);
+        printf("  ok:   portfolio[80]=%.4f > portfolio[120]=%.4f\n", out[0],
+               out[4]);
     }
 
     /* AD Greeks: delta should match the closed-form delta closely. */
-    double ad_delta = mape_ad_greek(e, MAPE_GREEK_DELTA, MAPE_CALL,
-                                    100, 100, 0.05, 0.20, 1.0, 0.0);
+    double ad_delta = mape_ad_greek(e, MAPE_GREEK_DELTA, MAPE_CALL, 100, 100,
+                                    0.05, 0.20, 1.0, 0.0);
     check_near("AD delta == closed-form", ad_delta, delta, 1e-9);
 
     /* Exotic: Asian call must be cheaper than the vanilla European call. */
-    double asian = mape_price_exotic(e, MAPE_EXOTIC_ASIAN, MAPE_CALL,
-                                     100, 100, 0.05, 0.20, 1.0, 0.0,
-                                     0.0, MAPE_BARRIER_UP_OUT, 50, 200000);
+    double asian =
+        mape_price_exotic(e, MAPE_EXOTIC_ASIAN, MAPE_CALL, 100, 100, 0.05, 0.20,
+                          1.0, 0.0, 0.0, MAPE_BARRIER_UP_OUT, 50, 200000);
     if (!(asian > 0.0 && asian < bs)) {
-        ++failures; printf("  FAIL: Asian not in (0, vanilla): %.4f\n", asian);
+        ++failures;
+        printf("  FAIL: Asian not in (0, vanilla): %.4f\n", asian);
     } else {
         printf("  ok:   Asian call %.4f < vanilla %.4f\n", asian, bs);
     }
@@ -98,9 +114,13 @@ int main(void) {
     double iv = mape_implied_vol(e, MAPE_CALL, bs, 100, 100, 0.05, 1.0, 0.0);
     check_near("implied vol round-trip", iv, 0.20, 1e-6);
     /* Below-intrinsic price -> NaN (no solution). */
-    double iv_bad = mape_implied_vol(e, MAPE_CALL, 0.0001, 100, 70, 0.05, 1.0, 0.0);
-    if (!isnan(iv_bad)) { ++failures; printf("  FAIL: bad IV not NaN\n"); }
-    else printf("  ok:   below-intrinsic IV returns NaN\n");
+    double iv_bad =
+        mape_implied_vol(e, MAPE_CALL, 0.0001, 100, 70, 0.05, 1.0, 0.0);
+    if (!isnan(iv_bad)) {
+        ++failures;
+        printf("  FAIL: bad IV not NaN\n");
+    } else
+        printf("  ok:   below-intrinsic IV returns NaN\n");
 
     /* Bond: zero-coupon = discounted face. */
     double zc = mape_price_bond(e, 100.0, 0.0, 2.0, 1, 0.05);
@@ -113,10 +133,13 @@ int main(void) {
 
     /* Convergence: binomial price at high step count approaches BS. */
     double sizes[3] = {16, 128, 1024};
-    double conv[3]  = {0};
-    st = mape_convergence(e, MAPE_MODEL_BINOMIAL, MAPE_CALL,
-                          100, 100, 0.05, 0.20, 1.0, 0.0, sizes, 3, conv);
-    if (st != MAPE_OK) { ++failures; printf("  FAIL: convergence status %d\n", st); }
+    double conv[3] = {0};
+    st = mape_convergence(e, MAPE_MODEL_BINOMIAL, MAPE_CALL, 100, 100, 0.05,
+                          0.20, 1.0, 0.0, sizes, 3, conv);
+    if (st != MAPE_OK) {
+        ++failures;
+        printf("  FAIL: convergence status %d\n", st);
+    }
     check_near("binomial converges to BS", conv[2], bs, 1e-2);
 
     mape_destroy(e);

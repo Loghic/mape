@@ -50,18 +50,22 @@ int main() {
     // --- 1. Latency per model (single task, fixed size) -----------------
     {
         BlackScholes bs;
-        auto s = measure([&] {
-            double p = bs.price(call, mkt);
-            do_not_optimize(p);
-        }, 15, 2);
+        auto s = measure(
+            [&] {
+                double p = bs.price(call, mkt);
+                do_not_optimize(p);
+            },
+            15, 2);
         csv.row("black_scholes", 1, 0, s.median_ms, 1.0, 1.0, 0.0);
         log("black_scholes: %.5f ms\n", s.median_ms);
 
         BinomialTree tree(1000);
-        auto sb = measure([&] {
-            double p = tree.price(call, mkt);
-            do_not_optimize(p);
-        }, 9, 1);
+        auto sb = measure(
+            [&] {
+                double p = tree.price(call, mkt);
+                do_not_optimize(p);
+            },
+            9, 1);
         csv.row("binomial_1000steps", 1, 0, sb.median_ms, 1.0, 1.0, 0.0);
         log("binomial(1000): %.5f ms\n", sb.median_ms);
     }
@@ -81,18 +85,20 @@ int main() {
         double t1 = 0.0;
         std::fprintf(stderr, "# parallel MC, %zu paths:\n", paths);
         for (unsigned t : thread_counts) {
-            auto s = measure([&] {
-                double p = monte_carlo_parallel(proc, payoff, paths, discount,
-                                                t, 12345ULL);
-                do_not_optimize(p);
-            }, 5, 1);
+            auto s = measure(
+                [&] {
+                    double p = monte_carlo_parallel(proc, payoff, paths,
+                                                    discount, t, 12345ULL);
+                    do_not_optimize(p);
+                },
+                5, 1);
             if (t == 1) {
                 t1 = s.median_ms;
             }
             const double speedup = t1 / s.median_ms;
             const double eff = speedup / static_cast<double>(t);
-            csv.row("monte_carlo_parallel", t, paths, s.median_ms, speedup,
-                    eff, 0.0);
+            csv.row("monte_carlo_parallel", t, paths, s.median_ms, speedup, eff,
+                    0.0);
             std::fprintf(stderr,
                          "  threads=%2u  %.2f ms  speedup=%.2fx  eff=%.0f%%\n",
                          t, s.median_ms, speedup, eff * 100.0);
@@ -107,11 +113,13 @@ int main() {
         double t1 = 0.0;
         std::fprintf(stderr, "# Asian path-MC, %zu paths x 50 steps:\n", paths);
         for (unsigned t : {1u, hw}) {
-            auto s = measure([&] {
-                double p = monte_carlo_path_parallel(gen, asian, paths,
-                                                     discount, t, 7ULL);
-                do_not_optimize(p);
-            }, 5, 1);
+            auto s = measure(
+                [&] {
+                    double p = monte_carlo_path_parallel(gen, asian, paths,
+                                                         discount, t, 7ULL);
+                    do_not_optimize(p);
+                },
+                5, 1);
             if (t == 1) {
                 t1 = s.median_ms;
             }
@@ -134,15 +142,18 @@ int main() {
                                   60.0 + (i * 0.05), 1.0});
         }
         ThreadPool pool(hw);
-        auto s = measure([&] {
-            auto prices = price_portfolio(bs, book, mkt, pool);
-            do_not_optimize(prices[0]);
-        }, 9, 1);
+        auto s = measure(
+            [&] {
+                auto prices = price_portfolio(bs, book, mkt, pool);
+                do_not_optimize(prices[0]);
+            },
+            9, 1);
         const double per_sec =
             static_cast<double>(book.size()) / (s.median_ms / 1000.0);
         csv.row("portfolio_threadpool", hw, book.size(), s.median_ms, 0.0, 0.0,
                 0.0);
-        std::fprintf(stderr, "# portfolio: %zu instruments in %.3f ms (%.0f/s)\n",
+        std::fprintf(stderr,
+                     "# portfolio: %zu instruments in %.3f ms (%.0f/s)\n",
                      book.size(), s.median_ms, per_sec);
     }
 
@@ -153,13 +164,16 @@ int main() {
         BlackScholes bs;
         const double exact = bs.price(call, mkt);
         std::fprintf(stderr, "# MC accuracy (analytic = %.4f):\n", exact);
-        for (std::size_t n : {std::size_t(10'000), std::size_t(100'000),
-                              std::size_t(1'000'000), std::size_t(10'000'000)}) {
+        for (std::size_t n :
+             {std::size_t(10'000), std::size_t(100'000), std::size_t(1'000'000),
+              std::size_t(10'000'000)}) {
             double price = 0.0;
-            auto s = measure([&] {
-                price = monte_carlo_price(proc, payoff, n, discount, 99ULL);
-                do_not_optimize(price);
-            }, 3, 0);
+            auto s = measure(
+                [&] {
+                    price = monte_carlo_price(proc, payoff, n, discount, 99ULL);
+                    do_not_optimize(price);
+                },
+                3, 0);
             const double abs_err = std::fabs(price - exact);
             csv.row("monte_carlo_serial", 1, n, s.median_ms, 0.0, 0.0, abs_err);
             std::fprintf(stderr,
@@ -176,43 +190,49 @@ int main() {
         BlackScholes bs;
         const int iters = 200000;
 
-        auto s_ad = measure([&] {
-            double acc = 0.0;
-            for (int i = 0; i < iters; ++i) {
-                acc += ad.delta(call, mkt) + ad.gamma(call, mkt) +
-                       ad.vega(call, mkt) + ad.rho(call, mkt);
-            }
-            do_not_optimize(acc);
-        }, 5, 1);
+        auto s_ad = measure(
+            [&] {
+                double acc = 0.0;
+                for (int i = 0; i < iters; ++i) {
+                    acc += ad.delta(call, mkt) + ad.gamma(call, mkt) +
+                           ad.vega(call, mkt) + ad.rho(call, mkt);
+                }
+                do_not_optimize(acc);
+            },
+            5, 1);
 
-        auto s_bump = measure([&] {
-            double acc = 0.0;
-            const double h = 1e-4;
-            for (int i = 0; i < iters; ++i) {
-                // delta, gamma (central), vega, rho via finite differences.
-                MarketData up = mkt;
-                MarketData dn = mkt;
-                up.spot += h;
-                dn.spot -= h;
-                const double pu = bs.price(call, up);
-                const double pd = bs.price(call, dn);
-                const double p0 = bs.price(call, mkt);
-                const double delta = (pu - pd) / (2 * h);
-                const double gamma = (pu - (2 * p0) + pd) / (h * h);
-                MarketData uv = mkt; uv.vol += h;
-                const double vega = (bs.price(call, uv) - p0) / h;
-                MarketData ur = mkt; ur.rate += h;
-                const double rho = (bs.price(call, ur) - p0) / h;
-                acc += delta + gamma + vega + rho;
-            }
-            do_not_optimize(acc);
-        }, 5, 1);
+        auto s_bump = measure(
+            [&] {
+                double acc = 0.0;
+                const double h = 1e-4;
+                for (int i = 0; i < iters; ++i) {
+                    // delta, gamma (central), vega, rho via finite differences.
+                    MarketData up = mkt;
+                    MarketData dn = mkt;
+                    up.spot += h;
+                    dn.spot -= h;
+                    const double pu = bs.price(call, up);
+                    const double pd = bs.price(call, dn);
+                    const double p0 = bs.price(call, mkt);
+                    const double delta = (pu - pd) / (2 * h);
+                    const double gamma = (pu - (2 * p0) + pd) / (h * h);
+                    MarketData uv = mkt;
+                    uv.vol += h;
+                    const double vega = (bs.price(call, uv) - p0) / h;
+                    MarketData ur = mkt;
+                    ur.rate += h;
+                    const double rho = (bs.price(call, ur) - p0) / h;
+                    acc += delta + gamma + vega + rho;
+                }
+                do_not_optimize(acc);
+            },
+            5, 1);
 
         csv.row("greeks_ad", 1, iters, s_ad.median_ms, 0.0, 0.0, 0.0);
         csv.row("greeks_bump", 1, iters, s_bump.median_ms, 0.0, 0.0, 0.0);
         std::fprintf(stderr,
-                     "# Greeks x%d: AD %.2f ms vs bump %.2f ms (%.2fx)\n", iters,
-                     s_ad.median_ms, s_bump.median_ms,
+                     "# Greeks x%d: AD %.2f ms vs bump %.2f ms (%.2fx)\n",
+                     iters, s_ad.median_ms, s_bump.median_ms,
                      s_bump.median_ms / s_ad.median_ms);
     }
 

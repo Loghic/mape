@@ -17,13 +17,12 @@ namespace mape {
 template <PricingModel Model>
 std::vector<double> price_portfolio(const Model& model,
                                     const std::vector<Option>& book,
-                                    const MarketData& mkt,
-                                    ThreadPool& pool) {
+                                    const MarketData& mkt, ThreadPool& pool) {
     std::vector<std::future<double>> futures;
     futures.reserve(book.size());
     for (const Option& opt : book) {
-        futures.push_back(pool.submit(
-            [&model, opt, &mkt] { return model.price(opt, mkt); }));
+        futures.push_back(
+            pool.submit([&model, opt, &mkt] { return model.price(opt, mkt); }));
     }
     std::vector<double> out;
     out.reserve(book.size());

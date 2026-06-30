@@ -21,7 +21,8 @@ namespace mape {
 // T == double (runtime). `constexpr` lets the CtDouble instantiation fold
 // inside a constant expression / static_assert.
 template <typename T>
-constexpr T bs_price_generic(OptionType type, T S, T K, T r, T q, T sigma, T T_exp) {
+constexpr T bs_price_generic(OptionType type, T S, T K, T r, T q, T sigma,
+                             T T_exp) {
     using std::erfc;
     using std::exp;
     using std::log;
@@ -39,8 +40,7 @@ constexpr T bs_price_generic(OptionType type, T S, T K, T r, T q, T sigma, T T_e
     const T df_q = exp(-q * T_exp);
     const T df_r = exp(-r * T_exp);
 
-    if (type == OptionType::Call)
-        return S * df_q * N(d1) - K * df_r * N(d2);
+    if (type == OptionType::Call) return S * df_q * N(d1) - K * df_r * N(d2);
     return K * df_r * N(-d2) - S * df_q * N(-d1);
 }
 
@@ -57,16 +57,17 @@ struct BlackScholesAD {
         Dual S{mkt.spot, 1.0};
         return bs_price_generic<Dual>(opt.type, S, Dual(opt.strike),
                                       Dual(mkt.rate), Dual(mkt.dividend),
-                                      Dual(mkt.vol), Dual(opt.maturity)).d;
+                                      Dual(mkt.vol), Dual(opt.maturity))
+            .d;
     }
 
     // vega = d(price)/d(sigma): seed sigma with derivative 1.
     double vega(const Option& opt, const MarketData& mkt) const {
         Dual sigma{mkt.vol, 1.0};
-        return bs_price_generic<Dual>(opt.type, Dual(mkt.spot),
-                                      Dual(opt.strike), Dual(mkt.rate),
-                                      Dual(mkt.dividend), sigma,
-                                      Dual(opt.maturity)).d;
+        return bs_price_generic<Dual>(
+                   opt.type, Dual(mkt.spot), Dual(opt.strike), Dual(mkt.rate),
+                   Dual(mkt.dividend), sigma, Dual(opt.maturity))
+            .d;
     }
 
     // rho = d(price)/d(rate): seed r with derivative 1.
@@ -74,7 +75,8 @@ struct BlackScholesAD {
         Dual r{mkt.rate, 1.0};
         return bs_price_generic<Dual>(opt.type, Dual(mkt.spot),
                                       Dual(opt.strike), r, Dual(mkt.dividend),
-                                      Dual(mkt.vol), Dual(opt.maturity)).d;
+                                      Dual(mkt.vol), Dual(opt.maturity))
+            .d;
     }
 
     // gamma = d^2(price)/d(spot)^2: seed S as a second-order dual (1st deriv 1,
@@ -83,7 +85,8 @@ struct BlackScholesAD {
         Dual2 S{mkt.spot, 1.0, 0.0};
         return bs_price_generic<Dual2>(opt.type, S, Dual2(opt.strike),
                                        Dual2(mkt.rate), Dual2(mkt.dividend),
-                                       Dual2(mkt.vol), Dual2(opt.maturity)).dd;
+                                       Dual2(mkt.vol), Dual2(opt.maturity))
+            .dd;
     }
 };
 

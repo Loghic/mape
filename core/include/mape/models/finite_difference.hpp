@@ -30,12 +30,13 @@ public:
     // sets the upper boundary S_max = s_max_mult * max(spot, strike).
     explicit FdPde(int spot_steps = 400, int time_steps = 400,
                    double s_max_mult = 4.0)
-        : spot_steps_(spot_steps), time_steps_(time_steps),
+        : spot_steps_(spot_steps),
+          time_steps_(time_steps),
           s_max_mult_(s_max_mult) {}
 
     double price(const Option& opt, const MarketData& mkt) const {
-        const int M = spot_steps_;   // spot intervals (M+1 grid points)
-        const int N = time_steps_;   // time steps
+        const int M = spot_steps_;  // spot intervals (M+1 grid points)
+        const int N = time_steps_;  // time steps
         const double K = opt.strike, T = opt.maturity;
         const double r = mkt.rate, q = mkt.dividend, sigma = mkt.vol;
         const bool is_call = opt.type == OptionType::Call;
@@ -53,9 +54,9 @@ public:
         std::vector<double> v(M + 1);
         for (int j = 0; j <= M; ++j) v[j] = payoff(j * ds);
 
-        // Tridiagonal coefficients for interior nodes j = 1..M-1. Crank-Nicolson
-        // averages the explicit and implicit operators (theta = 1/2). The
-        // spatial operator at node j:
+        // Tridiagonal coefficients for interior nodes j = 1..M-1.
+        // Crank-Nicolson averages the explicit and implicit operators (theta =
+        // 1/2). The spatial operator at node j:
         //   a_j V_{j-1} + b_j V_j + c_j V_{j+1}
         // with (using x = j as the index, S_j = j*ds):
         const double half = 0.5;
@@ -64,9 +65,9 @@ public:
             const double sig2j2 = sigma * sigma * j * j;
             const double rqj = (r - q) * j;
             // Coefficients of the spatial operator L (per unit dt).
-            a[j] = 0.5 * (sig2j2 - rqj);   // multiplies V_{j-1}
-            b[j] = -(sig2j2 + r);          // multiplies V_j
-            c[j] = 0.5 * (sig2j2 + rqj);   // multiplies V_{j+1}
+            a[j] = 0.5 * (sig2j2 - rqj);  // multiplies V_{j-1}
+            b[j] = -(sig2j2 + r);         // multiplies V_j
+            c[j] = 0.5 * (sig2j2 + rqj);  // multiplies V_{j+1}
         }
 
         // Implicit (left) and explicit (right) tridiagonals: (I - theta*dt*L)
@@ -82,13 +83,15 @@ public:
 
         // Step backward in time.
         for (int n = 0; n < N; ++n) {
-            const double tau_next = (n + 1) * dt;  // time-to-maturity at new layer
+            const double tau_next =
+                (n + 1) * dt;  // time-to-maturity at new layer
 
             // Dirichlet boundary values at S=0 and S=S_max for the new layer.
             double v0, vM;
             if (is_call) {
                 v0 = 0.0;
-                vM = s_max * std::exp(-q * tau_next) - K * std::exp(-r * tau_next);
+                vM = s_max * std::exp(-q * tau_next) -
+                     K * std::exp(-r * tau_next);
                 vM = std::max(vM, 0.0);
             } else {
                 v0 = K * std::exp(-r * tau_next);
@@ -101,7 +104,8 @@ public:
                          half * dt * a[j] * v[j - 1] +
                          half * dt * c[j] * v[j + 1];
             }
-            // Fold the (known) boundary values into the first/last interior eqns.
+            // Fold the (known) boundary values into the first/last interior
+            // eqns.
             rhs[1] -= lo[1] * v0;
             rhs[M - 1] -= up[M - 1] * vM;
 
@@ -134,8 +138,9 @@ public:
 
 private:
     // Thomas algorithm: solve a tridiagonal system in O(n) for indices
-    // [first, last]. `lo`/`di`/`up` are the sub/main/super diagonals; `d` is the
-    // RHS (overwritten with the solution); `cp` is scratch of size >= last+1.
+    // [first, last]. `lo`/`di`/`up` are the sub/main/super diagonals; `d` is
+    // the RHS (overwritten with the solution); `cp` is scratch of size >=
+    // last+1.
     static void thomas_solve(const std::vector<double>& lo,
                              const std::vector<double>& di,
                              const std::vector<double>& up,

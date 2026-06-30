@@ -38,8 +38,8 @@ double monte_carlo_parallel_synced(const Process& process, const Pay& payoff,
     if (n_threads == 0)
         n_threads = std::max(1u, std::thread::hardware_concurrency());
     if (total_paths == 0) return 0.0;
-    n_threads = static_cast<unsigned>(
-        std::min<std::size_t>(n_threads, total_paths));
+    n_threads =
+        static_cast<unsigned>(std::min<std::size_t>(n_threads, total_paths));
 
     const std::size_t chunk = total_paths / n_threads;
     const std::size_t remainder = total_paths % n_threads;
@@ -52,7 +52,8 @@ double monte_carlo_parallel_synced(const Process& process, const Pay& payoff,
     for (unsigned t = 0; t < n_threads; ++t) {
         const std::size_t this_chunk = chunk + (t < remainder ? 1 : 0);
         const std::uint64_t seed = seed_for(base_seed, t);
-        futures.push_back(std::async(std::launch::async,
+        futures.push_back(std::async(
+            std::launch::async,
             [&start_gate, &process, &payoff, this_chunk, seed] {
                 start_gate.arrive_and_wait();  // release all workers together
                 std::mt19937_64 rng(seed);
@@ -84,9 +85,9 @@ std::vector<double> run_bounded(const std::vector<Job>& jobs,
     futures.reserve(jobs.size());
     for (const Job& job : jobs) {
         futures.push_back(std::async(std::launch::async, [&permits, &job] {
-            permits.acquire();        // wait for a free slot
+            permits.acquire();  // wait for a free slot
             const double result = job();
-            permits.release();        // free the slot for the next task
+            permits.release();  // free the slot for the next task
             return result;
         }));
     }

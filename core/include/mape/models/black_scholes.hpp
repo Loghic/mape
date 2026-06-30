@@ -11,9 +11,7 @@
 namespace mape {
 
 // Standard normal CDF via erfc (no <numbers> dependency needed for this).
-inline double norm_cdf(double x) {
-    return 0.5 * std::erfc(-x * M_SQRT1_2);
-}
+inline double norm_cdf(double x) { return 0.5 * std::erfc(-x * M_SQRT1_2); }
 
 // Standard normal PDF.
 inline double norm_pdf(double x) {
@@ -40,8 +38,9 @@ public:
             return disc * intrinsic;
         }
 
-        const double d1 = (std::log(S / K) + (r - q + 0.5 * sigma * sigma) * T) /
-                          (sigma * std::sqrt(T));
+        const double d1 =
+            (std::log(S / K) + (r - q + 0.5 * sigma * sigma) * T) /
+            (sigma * std::sqrt(T));
         const double d2 = d1 - sigma * std::sqrt(T);
         const double df_q = std::exp(-q * T);
         const double df_r = std::exp(-r * T);
@@ -73,11 +72,13 @@ public:
     }
 
 private:
-    std::pair<double, double> d1d2(const Option& opt, const MarketData& mkt) const {
+    std::pair<double, double> d1d2(const Option& opt,
+                                   const MarketData& mkt) const {
         const double S = mkt.spot, K = opt.strike, r = mkt.rate;
         const double q = mkt.dividend, sigma = mkt.vol, T = opt.maturity;
-        const double d1 = (std::log(S / K) + (r - q + 0.5 * sigma * sigma) * T) /
-                          (sigma * std::sqrt(T));
+        const double d1 =
+            (std::log(S / K) + (r - q + 0.5 * sigma * sigma) * T) /
+            (sigma * std::sqrt(T));
         return {d1, d1 - sigma * std::sqrt(T)};
     }
 };

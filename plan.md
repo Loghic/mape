@@ -810,11 +810,14 @@ rather than reporting a fake error for Black–Scholes.
 
 ### 16.7 Quality & docs touches (bolt onto existing CI)
 
-> **Partially implemented.** ADRs added (`docs/adr/0001-0003`); the
-> execution sequence diagram already lives in `docs/architecture.md` /
-> `cpp-design.md`; `-Werror -Wall -Wextra` is on all three CI compiler legs
-> (gcc, clang/libc++, AppleClang). Still open: a clang-format gate, committed
-> benchmark-history CSVs with a regression gate, and C-API fuzzing.
+> **Implemented.** ADRs (`docs/adr/0001-0003`); execution sequence diagram in
+> `docs/architecture.md` / `cpp-design.md`; `-Werror -Wall -Wextra` on all three
+> CI compiler legs (gcc, clang/libc++, AppleClang); a **clang-format** gate
+> (`.clang-format` + a CI job, whole codebase reformatted to match); a
+> **benchmark regression gate** (`scripts/check_bench_regression.py` against the
+> committed `bench/results/baseline.csv`); and **C-API fuzzing**
+> (`ffi/tests/fuzz_c_api.cpp`, libFuzzer + ASan/UBSan, run in CI) — verified to
+> survive 20k+ random inputs with no crash or boundary-escaping exception.
 
 
 The CI in §14.1 already exists, so these are extensions, not new infrastructure:

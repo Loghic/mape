@@ -18,13 +18,13 @@ public:
     explicit BinomialTree(int steps = 512) : steps_(steps) {}
 
     double price(const Option& opt, const MarketData& mkt) const {
-        const int    n  = steps_;
-        const double T  = opt.maturity;
+        const int n = steps_;
+        const double T = opt.maturity;
         const double dt = T / n;
-        const double u  = std::exp(mkt.vol * std::sqrt(dt));
-        const double d  = 1.0 / u;
-        const double a  = std::exp((mkt.rate - mkt.dividend) * dt);
-        const double p  = (a - d) / (u - d);          // risk-neutral up prob
+        const double u = std::exp(mkt.vol * std::sqrt(dt));
+        const double d = 1.0 / u;
+        const double a = std::exp((mkt.rate - mkt.dividend) * dt);
+        const double p = (a - d) / (u - d);  // risk-neutral up prob
         const double disc = std::exp(-mkt.rate * dt);
 
         const VanillaPayoff payoff = opt.payoff();

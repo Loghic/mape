@@ -136,4 +136,31 @@ cmake --build build --target mape_bench
 ```
 
 The CSV columns are `model, threads, paths, median_ms, speedup, efficiency,
-std_error` — diffable across machines and commits.
+std_error` — diffable across machines and commits. (Or just
+`./scripts/build_and_test.sh --bench`, which writes a timestamped CSV to
+`bench/results/`.)
+
+### Regression check
+
+A committed baseline lives at `bench/results/baseline.csv`. Compare a fresh run
+against it (same machine — absolute timings vary across hardware):
+
+```bash
+python scripts/check_bench_regression.py bench/results/baseline.csv results.csv
+```
+
+It exits non-zero if any model's median runtime regressed beyond the tolerance
+(`--tol`, default 50%) or a parallel efficiency collapsed.
+
+## Static analysis & formatting
+
+Beyond the build, CI runs (see `.github/workflows/static-analysis.yml`):
+
+- **clang-format** — the C/C++ must match `.clang-format`. Check locally with
+  `clang-format --dry-run --Werror <files>`, or fix in place with
+  `clang-format -i`.
+- **clang-tidy** and **cppcheck** — static analysis over the core + FFI.
+- **C-API fuzzing** — `ffi/tests/fuzz_c_api.cpp` (libFuzzer) feeds malformed
+  input through every C entry point, asserting nothing crashes or throws across
+  the boundary.
+- **CodeQL** — semantic security/quality scanning.

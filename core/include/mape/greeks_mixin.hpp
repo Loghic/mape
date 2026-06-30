@@ -76,7 +76,7 @@ template <typename Model>
 double best_delta(const Model& model, const Option& opt,
                   const MarketData& mkt) {
     if constexpr (HasAnalyticDelta<Model>) {
-        return model.delta(opt, mkt);          // exact, no finite-difference
+        return model.delta(opt, mkt);  // exact, no finite-difference
     } else {
         // The model must derive BumpGreeks<Model> for this path to exist.
         return model.bump_delta(opt, mkt);

@@ -27,7 +27,8 @@ private:
     Model model_;
 };
 
-// Deduction guide so `Pricer p{BlackScholes{}};` works without spelling the type.
+// Deduction guide so `Pricer p{BlackScholes{}};` works without spelling the
+// type.
 template <typename Model>
 Pricer(Model) -> Pricer<Model>;
 
