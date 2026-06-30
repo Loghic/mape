@@ -385,9 +385,100 @@ care and the most tests.
   use-after-free across the FFI boundary.
 - **Greeks** — finite-difference Greeks checked against known signs/bounds.
 
+(Note: the "analytical benchmarks" above check *correctness*. Section 12 below
+is about *speed* — a separate concern.)
+
 ---
 
-## 12. Stretch goals
+## 12. Performance benchmarking
+
+> **Implemented.** `bench/bench_util.hpp` (steady-clock timing: warm-up, median
+> + spread, do-not-optimize barrier) and `bench/bench_main.cpp` (all measures
+> below, CSV on stdout + summary on stderr). Built with `-DMAPE_BUILD_BENCH=ON`.
+> See the README "Benchmarks" section. Sample 4-core run: parallel Monte Carlo
+> hits ~3.9× speedup / 97% efficiency at 4 threads, flat beyond (Amdahl, as
+> predicted). One honest deviation from the prediction below: for *Black–Scholes*
+> Greeks, AD ≈ bump-and-revalue (~1×) rather than a clear AD win — a closed-form
+> reprice is so cheap that AD's per-op derivative overhead cancels the "N+1
+> repricings" cost. AD's advantage materialises when the base price is expensive
+> (Monte Carlo / trees), not for a closed form.
+
+The threading work in §5.2 only earns its keep if we can *show* it pays off.
+This section measures, per model, how long a pricing run takes and — for the
+parallel models — how that time scales from 1 core to N cores. It naturally
+follows Phase 3 of the roadmap, once parallel Monte Carlo exists.
+
+### What we measure
+
+- **Latency** — wall-clock time for one pricing task at a fixed problem size
+  (e.g. a 1,000,000-path Monte Carlo, a 1,000-step binomial tree, one
+  Black–Scholes evaluation).
+- **Parallel scaling** — Monte Carlo time at thread counts 1, 2, 4, 8, … up to
+  and beyond the physical core count.
+- **Throughput** — prices per second for a whole portfolio (the thread-pool
+  path), which is the more realistic workload.
+- **Accuracy-vs-time** — Monte Carlo standard error against runtime / path
+  count, since MC explicitly trades precision for speed.
+- **Greeks cost** — autodiff Greeks (the `Dual`/`Dual2` path in `autodiff.hpp`)
+  against bump-and-revalue, now that both exist: AD gets all sensitivities in
+  roughly one augmented evaluation, bumping reprices once per Greek.
+
+### Key metrics
+
+- **Speedup** `S(n) = T(1) / T(n)`
+- **Parallel efficiency** `E(n) = S(n) / n` (1.0 = perfect linear scaling)
+- Framed by **Amdahl's law**: MC has a small serial part (seeding, the final
+  reduction), so efficiency should stay high up to the physical core count, then
+  flatten — hyperthreads add little for compute-bound floating-point work.
+
+### What we expect to see (and why it's worth showing)
+
+- **Black–Scholes** — sub-microsecond, single-threaded, and flat across core
+  counts: a closed form has nothing to parallelise. It's the floor everything
+  else is compared against.
+- **Binomial tree** — sequential backward induction; benchmarked for latency,
+  not scaling.
+- **Monte Carlo** — the headline result: near-linear speedup to the physical
+  core count (e.g. ~3.7× on 4 cores), tailing off afterwards. This is the chart
+  that justifies the whole threading effort.
+- **Path-dependent / exotic MC** — `path_monte_carlo` (Asian, barrier) should
+  scale like vanilla MC, since the paths stay independent; benchmarked to
+  confirm the thread-pool path holds up under heavier per-path work.
+- **AD vs bump Greeks** — the autodiff path should win clearly: one augmented
+  evaluation versus N+1 repricings for N Greeks.
+
+### Methodology (so the numbers mean something)
+
+- **Warm up** before timing (let caches and the CPU governor settle), then take
+  several repetitions and report the **median** plus spread — never a single
+  run.
+- **Strong scaling** — hold the problem size fixed across thread counts so the
+  speedup curve is apples-to-apples.
+- **Control the lever** — cap the worker count via the `n_threads` parameter
+  already in `parallel_mc` / the thread pool; record physical vs logical core
+  count and the CPU model alongside every result.
+- **Pin to cores for clean numbers** — capping `n_threads` only bounds how many
+  workers spawn; the OS scheduler can still migrate them between cores. For
+  rigorous per-core figures, set thread affinity (`pthread_setaffinity_np` on
+  Linux, `SetThreadAffinityMask` on Windows). It's platform-specific, so keep it
+  behind the bench harness rather than in the core.
+- **Watch for frequency scaling** — turbo/boost inflates low-core runs and
+  distorts the curve; pin the frequency if possible, otherwise record it.
+- Use a monotonic clock (`std::chrono::steady_clock`), not wall-clock time.
+
+### Tooling & output
+
+- A small `bench/` harness built on `std::chrono`, in the same dependency-free
+  spirit as the test harness (Google Benchmark is the heavier alternative if we
+  later want built-in statistical rigour).
+- Emit a CSV — `model, threads, paths, median_ms, speedup, efficiency,
+  std_error` — so results are diffable across machines and across commits.
+- Surface the speedup curve in the GUI as a sibling to the convergence chart
+  (§7), or simply plot the CSV.
+
+---
+
+## 13. Stretch goals
 
 - Greeks via automatic/algorithmic differentiation instead of bumping.
 - Yield-curve bootstrapping and proper discounting.

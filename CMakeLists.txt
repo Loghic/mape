@@ -19,6 +19,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(MAPE_BUILD_TESTS    "Build the pricing-core tests"   ON)
+option(MAPE_BUILD_BENCH    "Build the performance benchmarks" OFF)
 option(MAPE_ENABLE_WARNINGS "Enable -Wall -Wextra on targets" ON)
 
 # enable_testing() must be called at the top level (before add_subdirectory)
@@ -29,3 +30,4 @@ endif()
 
 add_subdirectory(core)
 add_subdirectory(ffi)   # extern "C" bridge producing libmape (links the core)
+add_subdirectory(bench) # performance benchmarks (guarded by MAPE_BUILD_BENCH)

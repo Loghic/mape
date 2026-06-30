@@ -2,6 +2,10 @@
 /build/
 build_mape_tests
 
+# Benchmark output
+results.csv
+*.bench.csv
+
 # Editor compilation database (symlinked from build/)
 /compile_commands.json
 

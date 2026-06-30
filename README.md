@@ -213,7 +213,24 @@ mape_destroy(e);   /* whoever creates must destroy */
 No C++ types cross the boundary, exceptions are caught inside the wrapper, and
 invalid input returns `NaN` (or a `MapeStatus` code via the `*_ex` variants).
 
-## Running the GUI (Rust)
+## Benchmarks
+
+Performance benchmarks (plan §12) measure per-model latency, parallel Monte
+Carlo scaling, portfolio throughput, the Monte Carlo accuracy/speed trade-off,
+and autodiff vs bump-and-revalue Greeks. They're off by default (they want an
+optimised build and aren't part of the correctness suite):
+
+```bash
+cmake -S . -B build -DMAPE_BUILD_BENCH=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target mape_bench
+./build/bench/mape_bench > results.csv     # CSV on stdout, summary on stderr
+```
+
+The CSV columns are `model, threads, paths, median_ms, speedup, efficiency,
+std_error` — diffable across machines and commits. A representative 4-core run
+shows parallel Monte Carlo reaching ~3.9× speedup (≈97% efficiency) at 4
+threads and flattening beyond the physical core count, exactly the Amdahl-law
+behaviour the threading design predicts.
 
 The GUI is a Cargo crate under `gui/`. Its `build.rs` invokes CMake to compile
 the C++ library, so you need **CMake + a C++20 compiler + the Rust toolchain**

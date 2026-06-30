@@ -32,6 +32,7 @@ gui/         Rust eframe/egui app. Links libmape via build.rs.
   src/data.rs     read-only rusqlite access to the market-data cache
   src/main.rs     the egui app (tabs: Single, Portfolio, Convergence, Smile,
                   Fixed income, Exotics)
+bench/       performance benchmarks (plan §12); off unless -DMAPE_BUILD_BENCH=ON
 data/        schema.sql for the SQLite market-data cache
 src/mape_data/   the Python fetcher package (yfinance -> SQLite)
 scripts/     build_and_test.sh; fetch_data.py (thin shim into src/mape_data)
