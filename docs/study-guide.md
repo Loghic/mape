@@ -13,6 +13,7 @@ see [cpp-design.md](cpp-design.md). This doc sits in between: the *quant*.
 - [Binomial tree](#binomial-tree)
 - [Monte Carlo](#monte-carlo)
 - [Parallel Monte Carlo](#parallel-monte-carlo)
+- [Variance reduction](#variance-reduction)
 - [Greeks](#greeks)
 - [Implied volatility](#implied-volatility)
 - [Exotics](#exotics)
@@ -250,6 +251,63 @@ Because the partial sums are added at the end (not shared during simulation),
 there's no shared mutable state in the hot loop — verified race-free under
 ThreadSanitizer. The serial and parallel results agree with Black–Scholes within
 Monte Carlo error.
+
+---
+
+## Variance reduction
+
+### Intuition
+
+Threads make Monte Carlo *faster*; **variance reduction** makes each path
+*count for more*. Recall the error is `s/√N` — to halve it you need 4× the
+paths. Variance reduction shrinks the `s` (the numerator) instead, so you get a
+tighter estimate at the *same* path count, essentially for free. MAPE implements
+the two classic techniques.
+
+### Antithetic variates
+
+For each standard-normal draw `Z`, also use `−Z`. The two paths are negatively
+correlated for a monotone payoff, so averaging them cancels much of the noise:
+if `Y(Z)` and `Y(−Z)` are the two payoffs, then
+
+```
+Var( ½(Y(Z) + Y(−Z)) ) = ½ Var(Y) (1 + ρ),   ρ = corr(Y(Z), Y(−Z)) < 0
+```
+
+so a negative `ρ` drops the variance below the naïve `½ Var(Y)` you'd get from
+two independent draws. In MAPE (`models/monte_carlo.hpp`):
+
+```cpp
+const double z = norm(rng);
+sum += 0.5 * (payoff(process.terminal(z)) + payoff(process.terminal(-z)));
+```
+
+### Control variates
+
+Use a quantity whose true mean you **already know** to correct the estimate. We
+have the perfect control: the closed-form Black–Scholes price. On each path
+observe the payoff `Y` and a control `X` with known mean `E[X]`, and form
+
+```
+Y* = Y − c · (X̄ − E[X]),     c = cov(X,Y) / var(X)
+```
+
+`Y*` has the same mean as `Y` (the correction term is zero-mean) but lower
+variance — by a factor of `(1 − ρ²)`, where `ρ = corr(X,Y)`. For a vanilla
+option priced against itself the control *is* the payoff, `ρ = 1`, and the
+corrected estimate collapses to the exact BS price plus a residual the same
+draws can't reproduce — i.e. essentially exact. MAPE
+(`variance_reduction.hpp`) accumulates the cov/var statistics on the fly:
+
+```cpp
+const double c = var_x > 0 ? cov_xy / var_x : 0.0;          // optimal coefficient
+const double corrected = mean_y - c * (mean_x - bs_price);  // E[X] = closed-form BS
+```
+
+`test_variance_reduction` confirms it: at 200k paths the plain MC error was
+~0.07 while the control-variate error was ~0 (the self-control case). The real
+use is pricing a *nearby exotic* with the vanilla as its control — the high-`ρ`
+case where the technique genuinely earns an order-of-magnitude error cut.
 
 ---
 

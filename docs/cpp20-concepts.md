@@ -1,12 +1,14 @@
-# C++20 Concepts, Templates, and Threading — a deep dive
+# C++20 features in MAPE — a deep dive
 
-This is an in-depth walkthrough of the three C++20 language features the project
-leans on, **where** they live in the code, and **what** they actually do. Every
-claim points at a real file so you can read along.
+This is an in-depth walkthrough of the C++20 language features the project leans
+on, **where** they live in the code, and **what** they actually do. Every claim
+points at a real file so you can read along.
 
 - [Part 1 — Concepts](#part-1--concepts-the-concept-keyword)
 - [Part 2 — Templates](#part-2--templates)
 - [Part 3 — Threading](#part-3--threading)
+- [Part 4 — Coroutines](#part-4--coroutines)
+- [Part 5 — Other C++20 features in use](#part-5--other-c20-features-in-use)
 
 ---
 
@@ -325,6 +327,98 @@ flowchart TD
 
 ---
 
+## Part 4 — Coroutines
+
+C++20 added **coroutines**: functions that can suspend and resume, keeping their
+local state alive across suspensions. MAPE uses one to stream Monte Carlo
+payoffs lazily.
+
+### What a coroutine *is*
+
+A function becomes a coroutine the moment its body uses `co_yield`, `co_await`,
+or `co_return`. The compiler rewrites it into a state machine backed by a
+**coroutine frame** (its locals live there, not on the stack), driven by a
+**promise type** that you supply. `co_yield v` hands `v` to the caller and
+suspends; resuming continues right after the `co_yield`. The upshot: you can
+produce a sequence one element at a time, on demand, without ever materialising
+the whole thing.
+
+### The generator type
+
+[`core/include/mape/generator.hpp`](../core/include/mape/generator.hpp) is a
+minimal `generator<T>` — the hand-rolled C++20 stand-in for C++23's
+`std::generator`. Its `promise_type` stores the most recent `co_yield`ed value;
+the generator exposes a **standard input iterator** (`begin()`/`end()` with a
+`std::default_sentinel_t`), so it plugs into range-based `for` and the
+ranges/views machinery:
+
+```cpp
+struct promise_type {
+    T current_{};
+    std::suspend_always yield_value(T value) noexcept {   // co_yield lands here
+        current_ = std::move(value);
+        return {};                                        // suspend after each
+    }
+    // initial/final_suspend, get_return_object, unhandled_exception ...
+};
+```
+
+### Lazy Monte Carlo
+
+[`core/include/mape/models/lazy_monte_carlo.hpp`](../core/include/mape/models/lazy_monte_carlo.hpp)
+turns the MC loop into a coroutine that `co_yield`s one discounted payoff per
+path:
+
+```cpp
+template <StochasticProcess Process, Payoff Pay>
+generator<double> mc_payoff_stream(Process process, Pay payoff,
+                                   std::size_t paths, double discount,
+                                   std::uint64_t seed = 12345ULL) {
+    std::mt19937_64 rng(seed);
+    std::normal_distribution<double> norm(0.0, 1.0);
+    for (std::size_t i = 0; i < paths; ++i)
+        co_yield discount * payoff(process.terminal(norm(rng)));   // one at a time
+}
+```
+
+Why it earns its place: the consumer holds **one payoff at a time** — O(1)
+memory regardless of path count — and because the generator is a real input
+range, you can compose it declaratively:
+
+```cpp
+for (double pay : mc_payoff_stream(proc, payoff, N, disc, seed)) sum += pay;
+// or with views: ... | std::views::filter(in_the_money) | std::views::transform(...)
+```
+
+For the same seed it produces the **identical** estimate to the eager
+`monte_carlo_price` — verified in `test_lazy_monte_carlo`. One subtlety the code
+is careful about: the RNG and distribution are captured **by value** into the
+coroutine frame, because a reference would dangle once the calling scope exits
+before the stream is fully consumed.
+
+---
+
+## Part 5 — Other C++20 features in use
+
+Beyond the four above, the engine uses several more C++20 facilities where they
+pull weight:
+
+- **`std::latch`** ([`threading/sync_primitives.hpp`](../core/include/mape/threading/sync_primitives.hpp))
+  — a one-shot countdown so all parallel-MC workers begin the timed region at
+  the same instant (`monte_carlo_parallel_synced`), keeping benchmark timing
+  honest.
+- **`std::counting_semaphore`** (same file) — caps in-flight tasks in
+  `run_bounded`, bounding peak memory when a huge book is repriced at once.
+- **`std::span`** ([`exotic.hpp`](../core/include/mape/exotic.hpp),
+  [`concepts.hpp`](../core/include/mape/concepts.hpp)) — the `PathPayoff` concept
+  takes a `std::span<const double>` over a path, a non-owning view that lets
+  exotics read the path without copying.
+- **`constexpr`/`consteval`** — compile-time pricing; covered in depth in the
+  [study guide](study-guide.md) and [cpp-design](cpp-design.md). The `concept`
+  keyword itself (Part 1) is of course also C++20.
+
+---
+
 ## Summary: feature → location
 
 | Feature | File(s) |
@@ -336,3 +430,8 @@ flowchart TD
 | Parallel MC (`std::async`/`future`) | `core/include/mape/threading/parallel_mc.hpp` |
 | Thread pool (`thread`/`mutex`/`cv`) | `core/include/mape/threading/thread_pool.hpp` |
 | Portfolio pricing via pool | `core/include/mape/portfolio.hpp` |
+| Coroutine generator | `core/include/mape/generator.hpp`, `models/lazy_monte_carlo.hpp` |
+| `latch` / `counting_semaphore` | `core/include/mape/threading/sync_primitives.hpp` |
+| Variadic portfolio (fold) | `core/include/mape/portfolio_compile_time.hpp` |
+| CRTP Greeks + capability detection | `core/include/mape/greeks_mixin.hpp` |
+| `constexpr`/`consteval` pricing | `core/include/mape/ct_math.hpp`, `compile_time.hpp` |
