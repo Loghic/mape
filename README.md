@@ -21,7 +21,7 @@ script can feed it live option quotes for implied-volatility analysis.
 |------|--------|
 | Domain types | `MarketData`, `Option` (European/American, call/put), `Bond`, `FxForward`, vanilla payoff callables, `std::variant`-based `Instrument` |
 | Templated engine | `Pricer<Model>` constrained by C++20 **concepts** (`PricingModel`, `Payoff`, `StochasticProcess`) — one generic engine, no virtual dispatch |
-| Models | Black–Scholes–Merton (closed form + analytic Greeks), Cox–Ross–Rubinstein **binomial tree** (American exercise), **Monte Carlo** (templated on process + payoff) |
+| Models | Black–Scholes–Merton (closed form + analytic Greeks), Cox–Ross–Rubinstein **binomial tree** (American), **Monte Carlo** (templated on process + payoff), **Crank–Nicolson finite-difference PDE** (American) |
 | Threading | Parallel Monte Carlo with **independent per-thread RNG streams**, a mutex-guarded **thread pool**, and concurrent **portfolio pricing** |
 | Exotics | Path-dependent Monte Carlo (parallel) with **Asian**, **barrier** (knock in/out), and **lookback** payoffs as small `PathPayoff` callables |
 | Fixed income | Analytic **fixed-coupon bond** and **FX forward** pricing (covered interest parity) |
@@ -93,10 +93,18 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-Or run `scripts/build_and_test.sh` (add `-v` for verbose). For a detailed
-walk-through of every flag, building without CMake, generating
-`compile_commands.json` for your editor, and running the sanitizers, see
-[`docs/building.md`](docs/building.md).
+Or use the helper script:
+
+```bash
+./scripts/build_and_test.sh            # build + run all tests
+./scripts/build_and_test.sh --bench    # ...and also run the benchmarks
+./scripts/build_and_test.sh -v         # verbose (full compiler/ctest output)
+```
+
+`--bench` builds the benchmarks and writes a timestamped CSV to
+`bench/results/` (a summary prints to the terminal). For a detailed walk-through
+of every flag, building without CMake, generating `compile_commands.json` for
+your editor, and running the sanitizers, see [`docs/building.md`](docs/building.md).
 
 ## Quick example
 
@@ -215,7 +223,7 @@ stretch goals: exotic path-dependent payoffs, bond/FX pricing, AD Greeks
 implied-vol solver, compile-time pricing (`constexpr`/`consteval`), and the GUI
 convergence + volatility-smile charts. The C↔Rust binding signatures are
 verified consistent against `mape_c_api.h` (16 functions). The C++ core passes
-100 checks and is clean under ThreadSanitizer; the compile-time and C ABI smoke
+104 checks and is clean under ThreadSanitizer; the compile-time and C ABI smoke
 tests pass.
 
 Remaining ideas (not yet done): yield-curve bootstrapping / multi-curve

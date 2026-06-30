@@ -34,6 +34,7 @@ core/include/mape/
 │   ├── black_scholes.hpp       BlackScholes (closed form + Greeks)
 │   ├── black_scholes_ad.hpp    bs_price_generic<T> + BlackScholesAD
 │   ├── binomial.hpp            BinomialTree (CRR, American)
+│   ├── finite_difference.hpp   FdPde (Crank-Nicolson PDE, American)
 │   ├── monte_carlo.hpp         MonteCarlo + GbmProcess + monte_carlo_price[_antithetic]
 │   ├── path_monte_carlo.hpp    GbmPathGenerator + monte_carlo_path_price
 │   ├── lazy_monte_carlo.hpp    mc_payoff_stream — lazy coroutine MC
@@ -49,7 +50,7 @@ ffi/
 └── tests/c_smoke_test.c        pure-C consumer test
 
 core/tests/
-├── test_main.cpp               runtime test harness (100 checks)
+├── test_main.cpp               runtime test harness (104 checks)
 └── test_compile_time.cpp       compile-time (static_assert) tests
 ```
 
@@ -67,6 +68,7 @@ core/tests/
 | Scalar-generic BS | `models/black_scholes_ad.hpp` | `bs_price_generic<T>` |
 | AD Greeks | `models/black_scholes_ad.hpp` + `autodiff.hpp` | `BlackScholesAD`, `Dual`, `Dual2` |
 | Binomial tree | `models/binomial.hpp` | `BinomialTree` |
+| FD PDE solver | `models/finite_difference.hpp` | `FdPde` (Crank-Nicolson) |
 | Monte Carlo (terminal) | `models/monte_carlo.hpp` | `MonteCarlo`, `GbmProcess`, `monte_carlo_price` |
 | Monte Carlo (path) | `models/path_monte_carlo.hpp` | `GbmPathGenerator`, `monte_carlo_path_price` |
 | Parallel MC | `threading/parallel_mc.hpp` | `monte_carlo_parallel`, `monte_carlo_path_parallel`, `seed_for` |

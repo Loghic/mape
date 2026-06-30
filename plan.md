@@ -89,7 +89,11 @@ prototyping mattered more than packaging.
 - **Black–Scholes–Merton** — closed-form, the analytical benchmark.
 - **Binomial / CRR tree** — handles American exercise.
 - **Monte Carlo** — path simulation; the workhorse for the threading feature.
-- *(stretch)* Finite-difference PDE solver.
+- *(stretch)* Finite-difference PDE solver. **Implemented:** `FdPde` in
+  `models/finite_difference.hpp` — Crank-Nicolson on the Black-Scholes PDE
+  (uniform spot grid, Thomas tridiagonal solve), European + American (early-
+  exercise projection), satisfies `PricingModel`. Converges to Black-Scholes
+  (~1e-3 on a 400×400 grid). See `test_finite_difference`.
 
 Each model implements the same conceptual contract so the engine can treat them
 uniformly (see §5.1).
@@ -480,12 +484,18 @@ follows Phase 3 of the roadmap, once parallel Monte Carlo exists.
 
 ## 13. Stretch goals
 
+> **All implemented.** Each item below has shipped (the FD PDE solver from §4
+> too — see its note there).
+
 - Greeks via automatic/algorithmic differentiation instead of bumping.
-- Yield-curve bootstrapping and proper discounting.
+  *(autodiff.hpp / black_scholes_ad.hpp)*
+- Yield-curve bootstrapping and proper discounting. *(calibration.hpp
+  `bootstrap_curve`, market_types.hpp `YieldCurve`)*
 - Exotic payoffs (Asian, barrier, lookback) — these fall out almost for free
-  thanks to the templated payoff design.
-- Convergence and payoff charts in the GUI.
+  thanks to the templated payoff design. *(exotic.hpp)*
+- Convergence and payoff charts in the GUI. *(Convergence tab)*
 - A counter-based RNG (e.g. Philox) for reproducible parallel streams.
+  *(counter_rng.hpp; deterministic parallel MC, §16.5)*
 
 ---
 

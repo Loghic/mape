@@ -27,6 +27,7 @@
 #include "mape/models/black_scholes.hpp"
 #include "mape/models/black_scholes_ad.hpp"
 #include "mape/models/binomial.hpp"
+#include "mape/models/finite_difference.hpp"
 #include "mape/models/fixed_income.hpp"
 #include "mape/models/lazy_monte_carlo.hpp"
 #include "mape/models/monte_carlo.hpp"

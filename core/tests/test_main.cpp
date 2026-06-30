@@ -765,6 +765,39 @@ static void test_risk_scenarios() {
     CHECK(st.front().pnl < 0.0, "spot -20% loses value on a call");
 }
 
+// --- 23. Finite-difference PDE solver (§4/§13) --------------------------
+static void test_finite_difference() {
+    std::printf("test_finite_difference\n");
+    BlackScholes bs;
+    FdPde fd(400, 400, 4.0);
+    MarketData mkt = make_market();
+
+    // European call/put converge to Black-Scholes across strikes.
+    bool conv = true;
+    for (double K : {80.0, 100.0, 120.0}) {
+        Option c{OptionType::Call, Exercise::European, K, 1.0};
+        Option p{OptionType::Put, Exercise::European, K, 1.0};
+        if (std::fabs(fd.price(c, mkt) - bs.price(c, mkt)) > 1e-2) conv = false;
+        if (std::fabs(fd.price(p, mkt) - bs.price(p, mkt)) > 1e-2) conv = false;
+    }
+    CHECK(conv, "FD PDE converges to Black-Scholes (calls + puts)");
+
+    // American put >= European put (early exercise has value).
+    Option eur_put{OptionType::Put, Exercise::European, 100.0, 1.0};
+    Option amer_put{OptionType::Put, Exercise::American, 100.0, 1.0};
+    CHECK(fd.price(amer_put, mkt) >= fd.price(eur_put, mkt) - 1e-9,
+          "FD American put >= European put");
+    // For these params the American premium should be strictly positive.
+    CHECK(fd.price(amer_put, mkt) > fd.price(eur_put, mkt) + 1e-3,
+          "FD American put carries a positive early-exercise premium");
+
+    // It satisfies PricingModel: Pricer<FdPde> works and matches the analytic.
+    Pricer p_fd{FdPde{}};
+    Option call = make_call();
+    CHECK_NEAR(p_fd.value(call, mkt), bs.price(call, mkt), 1e-2,
+               "Pricer<FdPde> ~ Black-Scholes");
+}
+
 int main() {
     test_black_scholes_reference();
     test_greeks();
@@ -788,6 +821,7 @@ int main() {
     test_market_types();
     test_calibration();
     test_risk_scenarios();
+    test_finite_difference();
 
     std::printf("\n%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
