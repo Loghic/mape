@@ -17,18 +17,26 @@ documentation.
 ```
 core/        C++20 pricing engine (header-only). The "heart". Knows nothing
              about C, Rust, the GUI, or the database.
-  include/mape/   public headers (models/, threading/, concepts, pricer, ...)
-  tests/          dependency-free test harness (test_main.cpp)
+  include/mape/   public headers: concepts, pricer, portfolio, instruments,
+                  market_data, autodiff (Dual/Dual2), ct_math, compile_time,
+                  implied_vol, exotic; models/ (black_scholes[_ad], binomial,
+                  monte_carlo, path_monte_carlo, fixed_income); threading/
+                  (thread_pool, parallel_mc). See docs/cpp-codemap.md.
+  tests/          dependency-free harnesses: test_main.cpp (runtime, 36 checks)
+                  and test_compile_time.cpp (static_asserts)
 ffi/         extern "C" wrapper -> libmape. The only surface Rust sees.
-  include/mape_c_api.h   flat C API over an opaque handle
+  include/mape_c_api.h   flat C API over an opaque handle (16 functions)
   src/, tests/           implementation + a pure-C smoke test
 gui/         Rust eframe/egui app. Links libmape via build.rs.
   src/bridge.rs   safe wrapper over the C API (Drop frees the engine)
   src/data.rs     read-only rusqlite access to the market-data cache
-  src/main.rs     the egui app (tabs: Single, Portfolio, Convergence, Smile)
+  src/main.rs     the egui app (tabs: Single, Portfolio, Convergence, Smile,
+                  Fixed income, Exotics)
 data/        schema.sql for the SQLite market-data cache
-scripts/     fetch_data.py (yfinance -> SQLite), build_and_test.sh
-docs/        architecture + C++20 concepts deep-dive (Mermaid diagrams)
+src/mape_data/   the Python fetcher package (yfinance -> SQLite)
+scripts/     build_and_test.sh; fetch_data.py (thin shim into src/mape_data)
+docs/        user-guide, study-guide, architecture, cpp-design, cpp-codemap,
+             cpp20-concepts (Mermaid diagrams throughout)
 pyproject.toml   uv-managed Python project for the data fetcher
 ```
 
@@ -47,7 +55,8 @@ rm -rf build                 # see gotcha #1 — do this after any CMake change
 ./scripts/build_and_test.sh        # or: ./scripts/build_and_test.sh -v
 ```
 
-Expected: `35 checks, 0 failures` (core) and `PASS (failures: 0)` (C smoke).
+Expected: `36 checks, 0 failures` (core), `PASS` (compile-time tests), and
+`PASS (failures: 0)` (C smoke).
 
 Quick verify without CMake (header-only core, sandbox-friendly):
 
@@ -135,4 +144,8 @@ uv run fetch-data AAPL MSFT --max-expiries 3
   `std::async`/`std::future`) and `thread_pool.hpp` (`std::thread` +
   `std::mutex` + `std::condition_variable`).
 
-See [`docs/cpp20-concepts.md`](docs/cpp20-concepts.md) for the deep-dive.
+For navigating the C++: [`docs/cpp-codemap.md`](docs/cpp-codemap.md) (where each
+feature lives) and [`docs/cpp-design.md`](docs/cpp-design.md) (why it's built
+this way + how the FFI works). [`docs/cpp20-concepts.md`](docs/cpp20-concepts.md)
+is the language-feature deep-dive; [`docs/study-guide.md`](docs/study-guide.md)
+is the math.

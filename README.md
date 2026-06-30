@@ -287,11 +287,13 @@ noise) are skipped, with a count shown.
 ## Status
 
 Core, FFI, and the Rust GUI are implemented (plan phases 1–6), plus the §12
-stretch goals: exotic path-dependent payoffs, bond/FX pricing, AD Greeks, the
-implied-vol solver, and the GUI convergence + volatility-smile charts. The
-C↔Rust binding signatures are verified consistent against `mape_c_api.h`
-(16 functions). The C++ core passes 35 checks and is clean under
-ThreadSanitizer; the C ABI smoke test passes.
+stretch goals: exotic path-dependent payoffs, bond/FX pricing, AD Greeks
+(delta/vega/rho via dual numbers, gamma via second-order duals), the
+implied-vol solver, compile-time pricing (`constexpr`/`consteval`), and the GUI
+convergence + volatility-smile charts. The C↔Rust binding signatures are
+verified consistent against `mape_c_api.h` (16 functions). The C++ core passes
+36 checks and is clean under ThreadSanitizer; the compile-time and C ABI smoke
+tests pass.
 
 Remaining ideas (not yet done): yield-curve bootstrapping / multi-curve
 discounting, continuous (vs discrete) barrier monitoring, and a counter-based
