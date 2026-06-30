@@ -59,6 +59,8 @@ jobs:
           --error-exitcode=1
           --suppress=missingIncludeSystem
           --suppress=checkersReport
+          --suppress=normalCheckLevelMaxBranches
+          --suppressions-list=.cppcheck-suppressions
           -I core/include
           -I ffi/include
           core ffi

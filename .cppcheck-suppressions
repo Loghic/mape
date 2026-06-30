@@ -1,0 +1,19 @@
+# cppcheck suppressions for the multi-asset pricing engine.
+#
+# passedByValue on the AD scalar types (Dual, Dual2) and the scalar-generic
+# Black-Scholes is a deliberate, correct design choice, NOT a defect:
+#
+#   * Dual (16B) and Dual2 (24B) are tiny arithmetic value types. Passing them
+#     by value lets the compiler keep them in registers and inline the chain-
+#     rule arithmetic; const-reference would add indirection and pessimize the
+#     hot automatic-differentiation loop. This mirrors how std::complex and
+#     other small numeric value types are passed.
+#   * bs_price_generic is templated on the scalar type T; for T = double the
+#     "pass by value" is obviously right, and for the Dual/Dual2/CtDouble
+#     instantiations the same register-passing argument applies.
+#
+# cppcheck's heuristic only flags types above ~16 bytes, which is why Dual
+# itself isn't reported but Dual2 is — the inconsistency confirms it's a size
+# heuristic, not a real performance problem.
+passedByValue:core/include/mape/autodiff.hpp
+passedByValue:core/include/mape/models/black_scholes_ad.hpp
