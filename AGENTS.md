@@ -105,13 +105,13 @@ uv run fetch-data AAPL MSFT --max-expiries 3
    it CMake silently drops `c_smoke_test.c` and the link fails with undefined
    `_main`).
 
-2. **uv won't rebuild a code-only change.** `uv sync` compares lockfile
-   metadata, not file contents, so editing `scripts/fetch_data.py` may not
-   trigger a rebuild of the installed module. If you see stale behavior or an
-   import/path error referencing `.venv/.../site-packages/`, run
-   `rm -rf .venv && uv sync`. The fetcher resolves `data/` relative to the
-   current working directory (run it from the repo root), with an embedded
-   schema fallback baked into the script.
+2. **Fetcher layout & paths.** The fetcher is a proper package at
+   `src/mape_data/` (with a thin `scripts/fetch_data.py` shim for the
+   plain-Python path). `uv sync` installs it editable, so source edits take
+   effect without a reinstall. It resolves `data/` relative to the current
+   working directory (run from the repo root), with an embedded schema fallback
+   baked into the module. If you ever see a stale install, `rm -rf .venv &&
+   uv sync` is the reset.
 
 3. **libc++ vs libstdc++ includes.** g++ (libstdc++) pulls in many headers
    transitively; AppleClang (libc++) does not. Always include `<algorithm>`

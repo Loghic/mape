@@ -32,8 +32,13 @@ pub enum Exercise {
 }
 
 /// Status codes returned by the `_ex` C entry points. Matches `MapeStatus`.
+///
+/// `Ok` is part of the C ABI contract but never surfaces in Rust — successful
+/// calls are mapped to `Ok(value)` of a `Result` instead — so allow dead code
+/// rather than drop a variant that mirrors the C enum.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(i32)]
+#[allow(dead_code)]
 pub enum Status {
     Ok = 0,
     NullHandle = 1,

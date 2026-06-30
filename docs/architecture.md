@@ -13,7 +13,7 @@ never opens a socket or a database. Everything flows *toward* the core.
 ```mermaid
 flowchart TD
     subgraph py["Python (data layer)"]
-        YF["yfinance fetch<br/>scripts/fetch_data.py"]
+        YF["yfinance fetch<br/>src/mape_data/fetch_data.py"]
     end
     subgraph db["SQLite cache"]
         DB[("data/market.db<br/>snapshots · option_quotes")]

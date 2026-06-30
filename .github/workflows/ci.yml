@@ -119,10 +119,10 @@ jobs:
         uses: astral-sh/setup-uv@v3
 
       - name: Lint
-        run: uvx ruff check scripts/fetch_data.py
+        run: uvx ruff check src/mape_data scripts/fetch_data.py
 
       - name: Format check
-        run: uvx ruff format --check scripts/fetch_data.py
+        run: uvx ruff format --check src/mape_data scripts/fetch_data.py
 
   # --- Code coverage: instrument the C++ tests, upload to Codecov ---------
   coverage:
