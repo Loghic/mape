@@ -849,3 +849,29 @@ The CI in §14.1 already exists, so these are extensions, not new infrastructure
   + concepts design for little gain (recompiling to add a model is fine). The
   only warranted slice is a small *static* name → model registry at the FFI seam
   — which is already the Bridge in §15.5, not a dynamic-loading system.
+- **FEM / FVM PDE solvers alongside the existing FD solver** — *not worth adding
+  on the current problem.* The Black-Scholes PDE for vanilla European/American
+  options is **1-D in space** (one state variable, the spot `S`, plus time), so
+  the Crank-Nicolson `FdPde` solves it on a single line of grid points with a
+  tridiagonal (Thomas) system. On a 1-D uniform mesh, both alternatives *collapse
+  onto essentially the same tridiagonal stencil* `FdPde` already produces: FVM's
+  control-volume discretization reduces to the same coefficients (it earns its
+  keep on conservation laws and irregular meshes, neither present here), and
+  FEM's mass/stiffness assembly with linear elements likewise reduces to a
+  near-identical tridiagonal system. Adding them now would be a lot of code to
+  reproduce a result we already get to ~1e-3 — no new capability, no new
+  accuracy, against the project's "earn its keep" rule.
+
+  **When they would earn their keep: a 2-D pricing problem.** A PDE becomes 2-D
+  when the value depends on *two* stochastic state variables, so the grid is a
+  plane rather than a line — e.g. **Heston** stochastic volatility, `V(S, v, t)`
+  over spot × variance (with a cross-derivative `∂²V/∂S∂v` term from the spot/vol
+  correlation), or a **two-asset basket** `V(S₁, S₂, t)`. In 2-D the coupling is
+  no longer tridiagonal, plain Crank-Nicolson gets expensive, and one reaches for
+  **ADI** (Alternating Direction Implicit — solve one dimension implicitly per
+  sub-step, keeping each tridiagonal). *That* is the regime where FEM (cross-
+  derivative term, non-rectangular boundaries, adaptive meshing) and FVM
+  (conservation) stop being redundant with FD. The high-value path, if the
+  numerical-methods surface is ever extended, is therefore: add a 2-D model
+  (Heston via ADI-FD is the standard next step) **first**, and only then a
+  FEM/FVM variant of *that* as a genuine comparison — not parallel 1-D solvers.
