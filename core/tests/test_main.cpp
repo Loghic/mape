@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <string>
 #include <vector>
 
 #include "mape/mape.hpp"
@@ -720,6 +721,50 @@ static void test_calibration() {
                    "bootstrapped curve recovers the zero rate");
 }
 
+// --- 22. Risk / scenario engine (§16.4) ---------------------------------
+static void test_risk_scenarios() {
+    std::printf("test_risk_scenarios\n");
+    BlackScholes bs;
+    Option call = make_call();
+    MarketData base = make_market();
+    ThreadPool pool(4);
+
+    // Scenario P&L must equal a manual reprice of the shifted market.
+    std::vector<Scenario> scen = {
+        Scenario{"spot+5", 5.0, 0, 0, 0},
+        Scenario{"vol+5pt", 0, 0, 0.05, 0},
+    };
+    auto table = run_scenarios(bs, call, base, scen, pool);
+    CHECK(table.size() == scen.size(), "scenario table has one row per scenario");
+
+    const double base_px = bs.price(call, base);
+    MarketData up_spot = base; up_spot.spot += 5.0;
+    CHECK_NEAR(table[0].price, bs.price(call, up_spot), 1e-12,
+               "scenario reprice matches manual");
+    CHECK_NEAR(table[0].pnl, bs.price(call, up_spot) - base_px, 1e-12,
+               "scenario P&L = price - base");
+    CHECK(table[1].pnl > 0.0, "vol bump raises a call's value (positive vega)");
+
+    // Scenario-derived Greeks match the closed-form Greeks (finite-difference
+    // through the same engine).
+    auto g = scenario_greeks(bs, call, base, pool);
+    CHECK_NEAR(g.delta, bs.delta(call, base), 1e-4, "scenario delta ~ analytic");
+    CHECK_NEAR(g.gamma, bs.gamma(call, base), 1e-2, "scenario gamma ~ analytic");
+    CHECK_NEAR(g.vega, bs.vega(call, base), 1e-2, "scenario vega ~ analytic");
+
+    // Parallel scenario run agrees with a serial manual computation.
+    auto stress = stress_scenarios(base.spot);
+    auto st = run_scenarios(bs, call, base, stress, pool);
+    bool all_match = st.size() == stress.size();
+    for (std::size_t i = 0; i < stress.size(); ++i) {
+        const double manual = bs.price(call, stress[i].apply(base));
+        if (std::fabs(st[i].price - manual) > 1e-12) all_match = false;
+    }
+    CHECK(all_match, "parallel stress run == serial reprice");
+    // A crash scenario (spot down, vol up) should lose value on a call.
+    CHECK(st.front().pnl < 0.0, "spot -20% loses value on a call");
+}
+
 int main() {
     test_black_scholes_reference();
     test_greeks();
@@ -742,6 +787,7 @@ int main() {
     test_pricing_result();
     test_market_types();
     test_calibration();
+    test_risk_scenarios();
 
     std::printf("\n%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

@@ -27,7 +27,7 @@ core/        C++20 pricing engine (header-only). The "heart". Knows nothing
                   monte_carlo, path_monte_carlo, lazy_monte_carlo,
                   fixed_income); threading/ (thread_pool, parallel_mc,
                   sync_primitives). See docs/cpp-codemap.md.
-  tests/          dependency-free harnesses: test_main.cpp (runtime, 91 checks)
+  tests/          dependency-free harnesses: test_main.cpp (runtime, 100 checks)
                   and test_compile_time.cpp (static_asserts)
 ffi/         extern "C" wrapper -> libmape. The only surface Rust sees.
   include/mape_c_api.h   flat C API over an opaque handle (16 functions)
@@ -61,7 +61,7 @@ rm -rf build                 # see gotcha #1 — do this after any CMake change
 ./scripts/build_and_test.sh        # or: ./scripts/build_and_test.sh -v
 ```
 
-Expected: `91 checks, 0 failures` (core), `PASS` (compile-time tests), and
+Expected: `100 checks, 0 failures` (core), `PASS` (compile-time tests), and
 `PASS (failures: 0)` (C smoke).
 
 Quick verify without CMake (header-only core, sandbox-friendly):

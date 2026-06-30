@@ -22,6 +22,7 @@
 #include "mape/portfolio_compile_time.hpp"
 #include "mape/pricer.hpp"
 #include "mape/pricing_result.hpp"
+#include "mape/risk.hpp"
 #include "mape/variance_reduction.hpp"
 #include "mape/models/black_scholes.hpp"
 #include "mape/models/black_scholes_ad.hpp"

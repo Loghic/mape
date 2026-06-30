@@ -750,6 +750,15 @@ down on purpose: short-rate model calibration (Hull–White et al.) is out of v1
 
 ### 16.4 Risk + scenario engine (one module)
 
+> **Implemented.** `risk.hpp`: `run_scenarios(model, opt, base, scenarios, pool)`
+> perturbs the market (spot/rate/vol/dividend shifts), reprices each scenario
+> concurrently on the `ThreadPool`, and tabulates P&L vs the base. Helpers:
+> `greek_bump_scenarios` + `scenario_greeks` (finite-difference delta/gamma/vega/
+> rho through the same engine, matching the analytic Greeks) and
+> `stress_scenarios` (large spot/vol shocks incl. a crash combo). Verified:
+> scenario reprice == manual, scenario Greeks ~ closed-form, parallel == serial,
+> clean under TSan. See `test_risk_scenarios`.
+
 Perturb spot/rate/vol/`q`/FX, reprice, tabulate P&L —
 `run_scenarios(portfolio) -> table`. The same machinery serves portfolio
 delta/gamma, bucketed vega, DV01, and stress tests. Earns its place: it's where
