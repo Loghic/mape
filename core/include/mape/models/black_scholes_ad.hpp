@@ -76,6 +76,15 @@ struct BlackScholesAD {
                                       Dual(opt.strike), r, Dual(mkt.dividend),
                                       Dual(mkt.vol), Dual(opt.maturity)).d;
     }
+
+    // gamma = d^2(price)/d(spot)^2: seed S as a second-order dual (1st deriv 1,
+    // 2nd deriv 0) and read the accumulated second derivative.
+    double gamma(const Option& opt, const MarketData& mkt) const {
+        Dual2 S{mkt.spot, 1.0, 0.0};
+        return bs_price_generic<Dual2>(opt.type, S, Dual2(opt.strike),
+                                       Dual2(mkt.rate), Dual2(mkt.dividend),
+                                       Dual2(mkt.vol), Dual2(opt.maturity)).dd;
+    }
 };
 
 }  // namespace mape

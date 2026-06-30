@@ -200,6 +200,8 @@ static void test_ad_greeks() {
     // delta and vega are exact, so a tight tolerance is appropriate.
     CHECK_NEAR(ad.delta(call, mkt), bs.delta(call, mkt), 1e-9, "AD delta == BS");
     CHECK_NEAR(ad.vega(call, mkt),  bs.vega(call, mkt),  1e-9, "AD vega == BS");
+    // gamma via second-order duals must match the closed-form second derivative.
+    CHECK_NEAR(ad.gamma(call, mkt), bs.gamma(call, mkt), 1e-9, "AD gamma == BS");
 
     // rho for a call: positive, and check against a tight finite difference.
     double h = 1e-6;
