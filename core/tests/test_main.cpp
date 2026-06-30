@@ -475,6 +475,9 @@ static void test_lazy_monte_carlo() {
         ++count;
     }
     CHECK(count == 1000, "coroutine stream yields exactly N payoffs");
+    // The streamed payoffs are real (positive mean for an ATM call), which also
+    // uses `sum` so it isn't a dead accumulation.
+    CHECK(sum > 0.0 && std::isfinite(sum), "streamed payoffs accumulate sanely");
 }
 
 // --- 16. Sync primitives: latch + semaphore (§15.6) ---------------------
