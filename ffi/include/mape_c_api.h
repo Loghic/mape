@@ -40,7 +40,8 @@ typedef enum { MAPE_EUROPEAN = 0, MAPE_AMERICAN = 1 } MapeExercise;
 typedef enum {
     MAPE_MODEL_BLACK_SCHOLES = 0,
     MAPE_MODEL_BINOMIAL = 1,
-    MAPE_MODEL_MONTE_CARLO = 2
+    MAPE_MODEL_MONTE_CARLO = 2,
+    MAPE_MODEL_FINITE_DIFF = 3 /* Crank-Nicolson PDE solver (FdPde) */
 } MapeModel;
 
 /* Status codes returned by the *_ex variants. */
@@ -188,6 +189,58 @@ MAPE_API MapeStatus mape_convergence(MapeEngine* engine, MapeModel model,
                                      double maturity, double dividend,
                                      const double* sample_sizes, size_t n,
                                      double* out_prices);
+
+/* --- Deterministic Monte Carlo (plan §16.5) -----------------------------
+ * Counter-based parallel Monte Carlo: the price is a pure function of the key
+ * and path count, so it is bit-identical regardless of `threads` (0 = use all
+ * hardware threads). Use this when reproducibility across machines/thread
+ * counts matters; the regular MAPE_MODEL_MONTE_CARLO path is stateful and
+ * faster. European payoff only. Returns NaN on invalid input. */
+MAPE_API double mape_price_mc_deterministic(MapeEngine* engine,
+                                            MapeOptionType type, double spot,
+                                            double strike, double rate,
+                                            double vol, double maturity,
+                                            double dividend, size_t paths,
+                                            size_t threads, size_t key);
+
+/* --- Calibration: SVI volatility smile (plan §16.3) ---------------------
+ * Fit Gatheral raw-SVI to `count` market quotes (parallel arrays of strike,
+ * maturity, implied_vol) at the given `forward`. On success writes the five SVI
+ * parameters (a, b, rho, m, sigma), the fit RMSE, and the iteration count, and
+ * returns MAPE_OK. out_params must hold 5 doubles. The fitted vol at strike K
+ * is available by sampling: see mape_svi_vol. */
+MAPE_API MapeStatus mape_calibrate_svi(MapeEngine* engine,
+                                       const double* strikes,
+                                       const double* maturities,
+                                       const double* implied_vols, size_t count,
+                                       double forward, double* out_params,
+                                       double* out_rmse, int* out_iterations);
+
+/* Evaluate a fitted SVI smile: implied vol at strike K for the 5 params
+ * (a, b, rho, m, sigma), forward F and maturity T. Lets the GUI draw the fitted
+ * curve without re-implementing the SVI formula. Returns NaN on invalid input.
+ */
+MAPE_API double mape_svi_vol(const double* params, double strike,
+                             double forward, double maturity);
+
+/* --- Risk: stress scenarios (plan §16.4) --------------------------------
+ * Reprice one European option under the built-in stress set (spot ±10/±20%,
+ * vol +shock, a crash combo) concurrently on the thread pool. Writes price and
+ * P&L (vs. the base market) for each of the MAPE_STRESS_COUNT scenarios, in the
+ * fixed order given by mape_stress_scenario_name(). Returns MAPE_OK on success;
+ * out_prices and out_pnls must each hold MAPE_STRESS_COUNT doubles. */
+#define MAPE_STRESS_COUNT 6
+
+MAPE_API MapeStatus mape_run_stress(MapeEngine* engine, MapeModel model,
+                                    MapeOptionType type, MapeExercise exercise,
+                                    double spot, double strike, double rate,
+                                    double vol, double maturity,
+                                    double dividend, double vol_shock,
+                                    double* out_prices, double* out_pnls);
+
+/* Name of the i-th stress scenario (0..MAPE_STRESS_COUNT). Returns a static
+ * string, or NULL if i is out of range. */
+MAPE_API const char* mape_stress_scenario_name(size_t i);
 
 /* Library version string, e.g. "0.1.0". */
 MAPE_API const char* mape_version(void);

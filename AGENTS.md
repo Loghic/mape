@@ -30,13 +30,13 @@ core/        C++20 pricing engine (header-only). The "heart". Knows nothing
   tests/          dependency-free harnesses: test_main.cpp (runtime, 104 checks)
                   and test_compile_time.cpp (static_asserts)
 ffi/         extern "C" wrapper -> libmape. The only surface Rust sees.
-  include/mape_c_api.h   flat C API over an opaque handle (16 functions)
+  include/mape_c_api.h   flat C API over an opaque handle (21 functions)
   src/, tests/           implementation + a pure-C smoke test
 gui/         Rust eframe/egui app. Links libmape via build.rs.
   src/bridge.rs   safe wrapper over the C API (Drop frees the engine)
   src/data.rs     read-only rusqlite access to the market-data cache
-  src/main.rs     the egui app (tabs: Single, Portfolio, Convergence, Smile,
-                  Fixed income, Exotics)
+  src/main.rs     the egui app (tabs: Single, Compare, Portfolio, Convergence,
+                  Smile, Calibration, Risk, Fixed income, Exotics)
 bench/       performance benchmarks (plan §12); off unless -DMAPE_BUILD_BENCH=ON
 data/        schema.sql for the SQLite market-data cache
 src/mape_data/   the Python fetcher package (yfinance -> SQLite)

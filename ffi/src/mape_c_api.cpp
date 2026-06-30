@@ -6,7 +6,9 @@
 
 #include "mape_c_api.h"
 
+#include <array>
 #include <cmath>
+#include <cstdint>
 #include <new>
 #include <vector>
 
@@ -35,6 +37,8 @@ double price_with_model(MapeModel model, const mape::Option& opt,
             return mape::BinomialTree{512}.price(opt, mkt);
         case MAPE_MODEL_MONTE_CARLO:
             return mape::MonteCarlo{200000}.price(opt, mkt);
+        case MAPE_MODEL_FINITE_DIFF:
+            return mape::FdPde{}.price(opt, mkt);
         case MAPE_MODEL_BLACK_SCHOLES:
         default:
             return mape::BlackScholes{}.price(opt, mkt);
@@ -159,6 +163,10 @@ MapeStatus mape_price_portfolio(MapeEngine* engine, MapeModel model,
             case MAPE_MODEL_MONTE_CARLO:
                 prices = mape::price_portfolio(mape::MonteCarlo{200000}, book,
                                                mkt, engine->pool);
+                break;
+            case MAPE_MODEL_FINITE_DIFF:
+                prices = mape::price_portfolio(mape::FdPde{}, book, mkt,
+                                               engine->pool);
                 break;
             case MAPE_MODEL_BLACK_SCHOLES:
             default:
@@ -324,6 +332,13 @@ MapeStatus mape_convergence(MapeEngine* engine, MapeModel model,
                     out_prices[i] =
                         mape::MonteCarlo{sz, 12345ULL}.price(opt, mkt);
                     break;
+                case MAPE_MODEL_FINITE_DIFF: {
+                    // For the PDE, the "sample size" is the grid resolution
+                    // (same number of spot and time steps).
+                    const int g = static_cast<int>(sz);
+                    out_prices[i] = mape::FdPde{g, g}.price(opt, mkt);
+                    break;
+                }
                 case MAPE_MODEL_BLACK_SCHOLES:
                 default:
                     out_prices[i] = mape::BlackScholes{}.price(opt, mkt);
@@ -334,6 +349,128 @@ MapeStatus mape_convergence(MapeEngine* engine, MapeModel model,
     } catch (...) {
         return MAPE_ERR_UNKNOWN;
     }
+}
+
+double mape_price_mc_deterministic(MapeEngine* engine, MapeOptionType type,
+                                   double spot, double strike, double rate,
+                                   double vol, double maturity, double dividend,
+                                   size_t paths, size_t threads, size_t key) {
+    if (!engine) return std::nan("");
+    if (!valid_market(spot, vol, maturity) || strike <= 0.0)
+        return std::nan("");
+    try {
+        const mape::Option opt{to_type(type), mape::Exercise::European, strike,
+                               maturity};
+        const mape::MarketData mkt{spot, rate, vol, dividend};
+        const auto process = mape::GbmProcess::from_market(mkt, maturity);
+        const double discount = std::exp(-rate * maturity);
+        return mape::monte_carlo_parallel_deterministic(
+            process, opt.payoff(), paths, discount,
+            static_cast<unsigned>(threads), static_cast<std::uint64_t>(key));
+    } catch (...) {
+        return std::nan("");
+    }
+}
+
+MapeStatus mape_calibrate_svi(MapeEngine* engine, const double* strikes,
+                              const double* maturities,
+                              const double* implied_vols, size_t count,
+                              double forward, double* out_params,
+                              double* out_rmse, int* out_iterations) {
+    if (!engine || !strikes || !maturities || !implied_vols || !out_params)
+        return MAPE_ERR_NULL_HANDLE;
+    if (count == 0 || !(forward > 0.0)) return MAPE_ERR_BAD_INPUT;
+    try {
+        std::vector<mape::MarketQuote> quotes;
+        quotes.reserve(count);
+        for (size_t i = 0; i < count; ++i)
+            quotes.push_back({strikes[i], maturities[i], implied_vols[i]});
+
+        const mape::CalibrationResult res =
+            mape::calibrate_svi(quotes, forward);
+        out_params[0] = res.params.a;
+        out_params[1] = res.params.b;
+        out_params[2] = res.params.rho;
+        out_params[3] = res.params.m;
+        out_params[4] = res.params.sigma;
+        if (out_rmse) *out_rmse = res.rmse;
+        if (out_iterations) *out_iterations = res.iterations;
+        return MAPE_OK;
+    } catch (...) {
+        return MAPE_ERR_UNKNOWN;
+    }
+}
+
+double mape_svi_vol(const double* params, double strike, double forward,
+                    double maturity) {
+    if (!params || !(strike > 0.0) || !(forward > 0.0) || !(maturity > 0.0))
+        return std::nan("");
+    const mape::SviParams p{params[0], params[1], params[2], params[3],
+                            params[4]};
+    const double v = p.vol(strike, forward, maturity);
+    return std::isfinite(v) ? v : std::nan("");
+}
+
+namespace {
+
+// Fixed stress-scenario ordering, shared by mape_run_stress and
+// mape_stress_scenario_name so the GUI's labels always match the rows. Mirrors
+// mape::stress_scenarios() but with stable, vol-shock-independent names.
+const char* const kStressNames[MAPE_STRESS_COUNT] = {
+    "spot -20%", "spot -10%",  "spot +10%",
+    "spot +20%", "vol +shock", "crash: spot -20%, vol +shock"};
+
+}  // namespace
+
+MapeStatus mape_run_stress(MapeEngine* engine, MapeModel model,
+                           MapeOptionType type, MapeExercise exercise,
+                           double spot, double strike, double rate, double vol,
+                           double maturity, double dividend, double vol_shock,
+                           double* out_prices, double* out_pnls) {
+    if (!engine || !out_prices || !out_pnls) return MAPE_ERR_NULL_HANDLE;
+    if (!valid_market(spot, vol, maturity) || strike <= 0.0)
+        return MAPE_ERR_BAD_INPUT;
+    try {
+        const mape::Option opt{to_type(type), to_exercise(exercise), strike,
+                               maturity};
+        const mape::MarketData mkt{spot, rate, vol, dividend};
+        const std::vector<mape::Scenario> sc =
+            mape::stress_scenarios(spot, vol_shock);
+
+        // Dispatch the model once; run_scenarios is templated on the concrete
+        // model, so we branch and call it per model type.
+        std::vector<mape::ScenarioResult> table;
+        switch (model) {
+            case MAPE_MODEL_BINOMIAL:
+                table = mape::run_scenarios(mape::BinomialTree{512}, opt, mkt,
+                                            sc, engine->pool);
+                break;
+            case MAPE_MODEL_MONTE_CARLO:
+                table = mape::run_scenarios(mape::MonteCarlo{200000}, opt, mkt,
+                                            sc, engine->pool);
+                break;
+            case MAPE_MODEL_FINITE_DIFF:
+                table = mape::run_scenarios(mape::FdPde{}, opt, mkt, sc,
+                                            engine->pool);
+                break;
+            case MAPE_MODEL_BLACK_SCHOLES:
+            default:
+                table = mape::run_scenarios(mape::BlackScholes{}, opt, mkt, sc,
+                                            engine->pool);
+                break;
+        }
+        for (size_t i = 0; i < MAPE_STRESS_COUNT && i < table.size(); ++i) {
+            out_prices[i] = table[i].price;
+            out_pnls[i] = table[i].pnl;
+        }
+        return MAPE_OK;
+    } catch (...) {
+        return MAPE_ERR_UNKNOWN;
+    }
+}
+
+const char* mape_stress_scenario_name(size_t i) {
+    return i < MAPE_STRESS_COUNT ? kStressNames[i] : nullptr;
 }
 
 const char* mape_version(void) { return "0.1.0"; }

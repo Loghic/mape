@@ -87,6 +87,31 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
                               vol, maturity, dividend, barrier,
                               MAPE_BARRIER_UP_OUT, steps, paths);
 
+    // FD-PDE model and deterministic MC: same boundary contract on garbage.
+    sink += mape_price(e, MAPE_MODEL_FINITE_DIFF, type, ex, spot, strike, rate,
+                       vol, maturity, dividend);
+    sink += mape_price_mc_deterministic(
+        e, type, spot, strike, rate, vol, maturity, dividend, paths,
+        static_cast<std::size_t>(sel & 7), static_cast<std::size_t>(sel));
+
+    // Calibration over a few quotes drawn from the fuzz scalars.
+    const double strikes[3] = {strike, strike + 5.0, strike - 5.0};
+    const double maturities[3] = {maturity, maturity, maturity};
+    const double ivs[3] = {vol, market_price, barrier};
+    double params[5] = {0, 0, 0, 0, 0};
+    double rmse = 0.0;
+    int iters = 0;
+    mape_calibrate_svi(e, strikes, maturities, ivs, 3, spot, params, &rmse,
+                       &iters);
+    sink += mape_svi_vol(params, strike, spot, maturity);
+
+    // Stress run under an arbitrary model + vol shock.
+    double sp[MAPE_STRESS_COUNT];
+    double spnl[MAPE_STRESS_COUNT];
+    mape_run_stress(e, model, type, ex, spot, strike, rate, vol, maturity,
+                    dividend, barrier, sp, spnl);
+    for (int i = 0; i < MAPE_STRESS_COUNT; ++i) sink += sp[i] + spnl[i];
+
     (void)sink;
     mape_destroy(e);
     return 0;

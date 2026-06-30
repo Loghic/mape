@@ -33,6 +33,8 @@ def c_kind(tok: str) -> str:
         return "double"
     if "size_t" in tok:
         return "usize"
+    if "int" in tok and "*" in tok:
+        return "int_ptr"
     if "int" in tok and "*" not in tok:
         return "i32"
     enums = ("MapeModel", "MapeOptionType", "MapeExercise", "MapeStatus",
@@ -70,6 +72,8 @@ def rust_kind(tok: str) -> str:
         return "double"
     if "usize" in tok:
         return "usize"
+    if "i32" in tok and "*" in tok:
+        return "int_ptr"
     if tok == "i32":
         return "i32"
     return tok

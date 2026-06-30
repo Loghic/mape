@@ -9,30 +9,130 @@
 mod bridge;
 mod data;
 
-use bridge::{AdGreek, BarrierKind, Engine, Exercise, Exotic, Greeks, Model, OptionType, Quote};
+use bridge::{
+    AdGreek, BarrierKind, Engine, Exercise, Exotic, Greeks, Model, OptionType, Quote, StressRow,
+    SviFit,
+};
 use data::DataStore;
 use eframe::egui;
 use egui_plot::{Legend, Line, Plot, PlotPoints, Points};
 use std::path::PathBuf;
 
+/// Palette. Two roles, deliberately split so text stays readable on the dark
+/// theme while plot fills can stay saturated:
+///   - `ACCENT`      — saturated brand blue, for plot lines/fills and the active
+///                     tab selection (sits on dark backgrounds as a *fill*).
+///   - `ACCENT_TEXT` — a much lighter blue used only for *text* (section titles,
+///                     headings, the price). The old dim blue (#60A5FA) was too
+///                     low-contrast on the ~#202020 panel; this is near-pastel.
+const ACCENT: egui::Color32 = egui::Color32::from_rgb(0x3B, 0x82, 0xF6);
+const ACCENT_TEXT: egui::Color32 = egui::Color32::from_rgb(0x9E, 0xC5, 0xFF);
+const HEADING: egui::Color32 = egui::Color32::from_rgb(0xE8, 0xF0, 0xFF);
+const GOOD: egui::Color32 = egui::Color32::from_rgb(0x4A, 0xDE, 0x80);
+const BAD: egui::Color32 = egui::Color32::from_rgb(0xFF, 0x6B, 0x6B);
+
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([720.0, 560.0]),
+        viewport: egui::ViewportBuilder::default().with_inner_size([840.0, 640.0]),
         ..Default::default()
     };
     eframe::run_native(
         "Multi-Asset Pricing Engine",
         options,
-        Box::new(|_cc| Box::new(App::new())),
+        Box::new(|cc| {
+            configure_style(&cc.egui_ctx);
+            Box::new(App::new())
+        }),
     )
+}
+
+/// Apply a tasteful, consistent look: roomier spacing, softer rounding, an
+/// accent-tinted active selection, and monospace-friendly defaults. Builds on
+/// egui's dark theme rather than replacing it.
+fn configure_style(ctx: &egui::Context) {
+    let mut style = (*ctx.style()).clone();
+    let s = &mut style.spacing;
+    s.item_spacing = egui::vec2(10.0, 8.0);
+    s.button_padding = egui::vec2(10.0, 5.0);
+    s.menu_margin = egui::Margin::same(8.0);
+    s.window_margin = egui::Margin::same(10.0);
+    s.interact_size.y = 26.0;
+
+    let v = &mut style.visuals;
+    let rounding = egui::Rounding::same(6.0);
+    v.widgets.noninteractive.rounding = rounding;
+    v.widgets.inactive.rounding = rounding;
+    v.widgets.hovered.rounding = rounding;
+    v.widgets.active.rounding = rounding;
+    v.widgets.open.rounding = rounding;
+    v.window_rounding = egui::Rounding::same(8.0);
+    // Tint selections with the brand accent.
+    v.selection.bg_fill = ACCENT.linear_multiply(0.55);
+    v.selection.stroke = egui::Stroke::new(1.0, ACCENT_TEXT);
+    v.hyperlink_color = ACCENT_TEXT;
+    // Brighten default body text so labels read clearly on the dark panel.
+    v.widgets.noninteractive.fg_stroke.color = egui::Color32::from_gray(0xD0);
+    v.override_text_color = Some(egui::Color32::from_gray(0xD8));
+
+    // Slightly larger body text for readability.
+    use egui::{FontFamily, FontId, TextStyle};
+    style.text_styles = [
+        (TextStyle::Heading, FontId::new(20.0, FontFamily::Proportional)),
+        (TextStyle::Body, FontId::new(14.5, FontFamily::Proportional)),
+        (TextStyle::Monospace, FontId::new(13.5, FontFamily::Monospace)),
+        (TextStyle::Button, FontId::new(14.5, FontFamily::Proportional)),
+        (TextStyle::Small, FontId::new(11.5, FontFamily::Proportional)),
+    ]
+    .into();
+
+    ctx.set_style(style);
+}
+
+/// Human-friendly model name for the combo box (nicer than the Debug spelling).
+fn model_label(m: Model) -> &'static str {
+    match m {
+        Model::BlackScholes => "Black-Scholes",
+        Model::Binomial => "Binomial tree",
+        Model::MonteCarlo => "Monte Carlo",
+        Model::FiniteDiff => "Finite difference (PDE)",
+    }
+}
+
+/// A titled, framed section — groups related controls/results with a subtle
+/// background and an accent heading, so each tab reads as distinct cards rather
+/// than a flat wall of widgets.
+fn section<R>(
+    ui: &mut egui::Ui,
+    title: &str,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    egui::Frame::group(ui.style())
+        .inner_margin(egui::Margin::same(10.0))
+        .rounding(egui::Rounding::same(8.0))
+        .fill(egui::Color32::from_gray(0x26))
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(0x3A)))
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new(title)
+                    .color(ACCENT_TEXT)
+                    .strong()
+                    .size(15.0),
+            );
+            ui.add_space(6.0);
+            add_contents(ui)
+        })
+        .inner
 }
 
 #[derive(PartialEq)]
 enum Tab {
     Single,
+    Compare,
     Portfolio,
     Convergence,
     Smile,
+    Calibration,
+    Risk,
     FixedIncome,
     Exotics,
 }
@@ -51,6 +151,12 @@ struct App {
     model: Model,
     opt_type: OptionType,
     exercise: Exercise,
+
+    // Deterministic Monte Carlo (counter-based, reproducible across threads).
+    // When set on the Single tab with the Monte Carlo model, the price is taken
+    // from the deterministic path so it's bit-identical run to run.
+    mc_deterministic: bool,
+    mc_threads: usize,
 
     // Single-instrument results.
     price: Option<f64>,
@@ -105,6 +211,16 @@ struct App {
     exotic_ms: Option<f64>,
     // Background-pricing channel: Some while a computation is in flight.
     exotic_rx: Option<std::sync::mpsc::Receiver<(f64, f64)>>,
+
+    // Calibration tab: SVI fit to the current Vol-smile points.
+    svi_fit: Option<SviFit>,
+    svi_forward: f64,
+    calib_status: String,
+
+    // Risk tab: stress-scenario table for the Single-tab option.
+    stress_rows: Vec<StressRow>,
+    stress_vol_shock: f64,
+    risk_status: String,
 }
 
 impl App {
@@ -123,6 +239,8 @@ impl App {
             model: Model::BlackScholes,
             opt_type: OptionType::Call,
             exercise: Exercise::European,
+            mc_deterministic: false,
+            mc_threads: 0, // 0 = all hardware threads
             price: None,
             greeks: Greeks::default(),
             tab: Tab::Single,
@@ -164,6 +282,12 @@ impl App {
             exotic_price: None,
             exotic_ms: None,
             exotic_rx: None,
+            svi_fit: None,
+            svi_forward: 0.0,
+            calib_status: String::new(),
+            stress_rows: Vec::new(),
+            stress_vol_shock: 0.10,
+            risk_status: String::new(),
         };
         app.recompute();
         app.open_data_store();
@@ -222,9 +346,16 @@ impl App {
     /// Recompute the single-instrument price and Greeks from current inputs.
     fn recompute(&mut self) {
         let q = self.quote();
-        self.price = self
-            .engine
-            .price(self.model, self.opt_type, self.exercise, q);
+        // Monte Carlo with the deterministic toggle takes the counter-based
+        // path (reproducible across thread counts); everything else uses the
+        // standard model dispatch.
+        self.price = if self.model == Model::MonteCarlo && self.mc_deterministic {
+            self.engine
+                .price_mc_deterministic(self.opt_type, q, 1_000_000, self.mc_threads, 0x5EED)
+        } else {
+            self.engine
+                .price(self.model, self.opt_type, self.exercise, q)
+        };
         self.greeks = self.engine.greeks(self.opt_type, q);
         self.status = match self.price {
             Some(_) => String::new(),
@@ -266,9 +397,11 @@ impl App {
             .price(Model::BlackScholes, self.opt_type, Exercise::European, q)
             .unwrap_or(f64::NAN);
 
-        // Log-spaced sample sizes: steps for binomial, paths for Monte Carlo.
+        // Sample sizes vary by model: binomial steps, MC paths, or FD grid
+        // resolution (kept modest since the PDE solve is O(grid^2) per point).
         let sizes: Vec<f64> = match self.conv_model {
             Model::Binomial => (1..=10).map(|k| (1u64 << k) as f64).collect(), // 2..1024
+            Model::FiniteDiff => (1..=8).map(|k| (25 * k) as f64).collect(),   // 25..200
             _ => (1..=10).map(|k| (1000u64 << (k - 1)) as f64).collect(),      // 1k..512k
         };
         match self
@@ -339,38 +472,115 @@ impl App {
             self.smile_skipped
         );
     }
+
+    /// Fit an SVI smile to the implied-vol points currently on the Vol-smile
+    /// tab. Uses the snapshot spot/rate to form the forward.
+    fn calibrate(&mut self) {
+        self.svi_fit = None;
+        if self.smile_points.len() < 5 {
+            self.calib_status =
+                "Need at least 5 implied-vol points — compute a smile on the Vol smile tab first."
+                    .into();
+            return;
+        }
+        // Forward F = S * e^{(r - q) T}; reuse the snapshot spot and a single
+        // representative maturity from the chain.
+        let (spot, rate) = (self.smile_spot.max(self.spot), self.rate);
+        let maturity = self.maturity.max(1e-6);
+        let forward = spot * ((rate - self.dividend) * maturity).exp();
+        self.svi_forward = forward;
+
+        let strikes: Vec<f64> = self.smile_points.iter().map(|p| p[0]).collect();
+        let mats = vec![maturity; strikes.len()];
+        let ivs: Vec<f64> = self.smile_points.iter().map(|p| p[1]).collect();
+
+        match self.engine.calibrate_svi(&strikes, &mats, &ivs, forward) {
+            Some(fit) => {
+                self.calib_status = format!(
+                    "fit {} points · RMSE {:.4e} · {} iters",
+                    strikes.len(),
+                    fit.rmse,
+                    fit.iterations
+                );
+                self.svi_fit = Some(fit);
+            }
+            None => self.calib_status = "Calibration failed (check inputs).".into(),
+        }
+    }
+
+    /// Run the stress set for the Single-tab option under the current model.
+    fn run_stress(&mut self) {
+        let q = self.quote();
+        match self
+            .engine
+            .run_stress(self.model, self.opt_type, self.exercise, q, self.stress_vol_shock)
+        {
+            Some(rows) => {
+                self.stress_rows = rows;
+                self.risk_status = String::new();
+            }
+            None => {
+                self.stress_rows.clear();
+                self.risk_status = "Invalid inputs (check vol ≥ 0, maturity > 0, strike > 0).".into();
+            }
+        }
+    }
 }
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("header").show(ctx, |ui| {
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
-                ui.heading("Multi-Asset Pricing Engine");
+                ui.label(
+                    egui::RichText::new("Multi-Asset Pricing Engine")
+                        .heading()
+                        .color(HEADING),
+                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.hyperlink_to(
                         "guide",
                         "https://github.com/Loghic/mape/blob/main/docs/user-guide.md",
                     );
-                    ui.label(format!("core v{}  ·", self.version));
+                    ui.weak(format!("core v{}  ·", self.version));
                 });
             });
-            ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.tab, Tab::Single, "Single instrument");
-                ui.selectable_value(&mut self.tab, Tab::Portfolio, "Portfolio");
-                ui.selectable_value(&mut self.tab, Tab::Convergence, "Convergence");
-                ui.selectable_value(&mut self.tab, Tab::Smile, "Vol smile");
-                ui.selectable_value(&mut self.tab, Tab::FixedIncome, "Fixed income");
-                ui.selectable_value(&mut self.tab, Tab::Exotics, "Exotics");
-            });
+            ui.add_space(2.0);
+            // Tabs can overflow a narrow window — let the bar scroll sideways.
+            egui::ScrollArea::horizontal()
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut self.tab, Tab::Single, "Single");
+                        ui.selectable_value(&mut self.tab, Tab::Compare, "Compare");
+                        ui.selectable_value(&mut self.tab, Tab::Portfolio, "Portfolio");
+                        ui.selectable_value(&mut self.tab, Tab::Convergence, "Convergence");
+                        ui.selectable_value(&mut self.tab, Tab::Smile, "Vol smile");
+                        ui.selectable_value(&mut self.tab, Tab::Calibration, "Calibration");
+                        ui.selectable_value(&mut self.tab, Tab::Risk, "Risk");
+                        ui.selectable_value(&mut self.tab, Tab::FixedIncome, "Fixed income");
+                        ui.selectable_value(&mut self.tab, Tab::Exotics, "Exotics");
+                    });
+                });
+            ui.add_space(2.0);
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| match self.tab {
-            Tab::Single => self.single_tab(ui),
-            Tab::Portfolio => self.portfolio_tab(ui),
-            Tab::Convergence => self.convergence_tab(ui),
-            Tab::Smile => self.smile_tab(ui),
-            Tab::FixedIncome => self.fixed_income_tab(ui),
-            Tab::Exotics => self.exotics_tab(ui),
+        // Every tab body scrolls vertically, so long tables/plots never clip
+        // the bottom of the window (fixes the Portfolio overflow).
+        egui::CentralPanel::default().show(ctx, |ui| {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| match self.tab {
+                    Tab::Single => self.single_tab(ui),
+                    Tab::Compare => self.compare_tab(ui),
+                    Tab::Portfolio => self.portfolio_tab(ui),
+                    Tab::Convergence => self.convergence_tab(ui),
+                    Tab::Smile => self.smile_tab(ui),
+                    Tab::Calibration => self.calibration_tab(ui),
+                    Tab::Risk => self.risk_tab(ui),
+                    Tab::FixedIncome => self.fixed_income_tab(ui),
+                    Tab::Exotics => self.exotics_tab(ui),
+                });
         });
     }
 }
@@ -431,11 +641,16 @@ impl App {
 
                 ui.label("Model");
                 egui::ComboBox::from_id_source("model")
-                    .selected_text(format!("{:?}", self.model))
+                    .selected_text(model_label(self.model))
                     .show_ui(ui, |ui| {
-                        for m in [Model::BlackScholes, Model::Binomial, Model::MonteCarlo] {
+                        for m in [
+                            Model::BlackScholes,
+                            Model::Binomial,
+                            Model::MonteCarlo,
+                            Model::FiniteDiff,
+                        ] {
                             changed |= ui
-                                .selectable_value(&mut self.model, m, format!("{:?}", m))
+                                .selectable_value(&mut self.model, m, model_label(m))
                                 .changed();
                         }
                     });
@@ -469,14 +684,46 @@ impl App {
     }
 
     fn single_tab(&mut self, ui: &mut egui::Ui) {
-        if self.input_controls(ui) {
+        let mut changed = section(ui, "Contract & market", |ui| self.input_controls(ui));
+
+        // Deterministic Monte Carlo toggle — only relevant for the MC model.
+        if self.model == Model::MonteCarlo {
+            changed |= section(ui, "Monte Carlo options", |ui| {
+                let mut c = false;
+                c |= ui
+                    .checkbox(
+                        &mut self.mc_deterministic,
+                        "Deterministic (reproducible across threads)",
+                    )
+                    .changed();
+                if self.mc_deterministic {
+                    ui.horizontal(|ui| {
+                        ui.label("Threads (0 = all):");
+                        c |= ui
+                            .add(egui::DragValue::new(&mut self.mc_threads).clamp_range(0..=64))
+                            .changed();
+                    });
+                    ui.weak(
+                        "Counter-based RNG: the price is a pure function of path \
+                         count + key, so it's bit-identical at any thread count.",
+                    );
+                }
+                c
+            });
+        }
+
+        if changed {
             self.recompute();
         }
-        ui.separator();
 
         match self.price {
             Some(p) => {
-                ui.heading(format!("Price: {:.4}", p));
+                section(ui, "Result", |ui| {
+                ui.label(
+                    egui::RichText::new(format!("Price  {:.4}", p))
+                        .heading()
+                        .color(HEADING),
+                );
                 ui.add_space(6.0);
 
                 // Exact Greeks via automatic differentiation (dual numbers),
@@ -521,59 +768,215 @@ impl App {
                     "Closed-form Greeks are Black-Scholes, European-style. AD \
                      Greeks are exact (forward-mode dual numbers).",
                 );
+                });
             }
             None => {
-                ui.colored_label(egui::Color32::LIGHT_RED, &self.status);
+                ui.colored_label(BAD, &self.status);
             }
+        }
+    }
+
+    fn compare_tab(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            "Price the same option with every method at once. Black-Scholes is \
+             the exact reference; the numerical models (binomial, Monte Carlo, \
+             finite-difference) should land close to it, trading accuracy for \
+             flexibility and speed.",
+        );
+        ui.add_space(6.0);
+
+        section(ui, "Contract & market", |ui| {
+            self.input_controls(ui);
+        });
+
+        let q = self.quote();
+        // Black-Scholes is the reference. (It treats exercise as European.)
+        let bs = self
+            .engine
+            .price(Model::BlackScholes, self.opt_type, Exercise::European, q);
+
+        // Price each model, timing the call. Returns (price, millis).
+        let mut time_price = |model: Model| -> (Option<f64>, f64) {
+            let t0 = std::time::Instant::now();
+            let p = self
+                .engine
+                .price(model, self.opt_type, self.exercise, q);
+            (p, t0.elapsed().as_secs_f64() * 1000.0)
+        };
+
+        let models = [
+            Model::BlackScholes,
+            Model::Binomial,
+            Model::MonteCarlo,
+            Model::FiniteDiff,
+        ];
+        let rows: Vec<(Model, Option<f64>, f64)> = models
+            .iter()
+            .map(|&m| {
+                let (p, ms) = time_price(m);
+                (m, p, ms)
+            })
+            .collect();
+
+        section(ui, "Prices by method", |ui| {
+            if self.exercise == Exercise::American {
+                ui.weak(
+                    "American exercise: only the binomial and finite-difference \
+                     models honour early exercise; Black-Scholes and Monte Carlo \
+                     price the European value here.",
+                );
+                ui.add_space(4.0);
+            }
+            egui::Grid::new("compare_table")
+                .num_columns(3)
+                .striped(true)
+                .min_col_width(140.0)
+                .show(ui, |ui| {
+                    ui.strong("Method");
+                    ui.strong("Price");
+                    ui.strong("Δ vs Black-Scholes");
+                    ui.end_row();
+                    for (m, p, _ms) in &rows {
+                        ui.label(model_label(*m));
+                        match p {
+                            Some(v) => ui.monospace(format!("{:.4}", v)),
+                            None => ui.weak("—"),
+                        };
+                        match (p, bs) {
+                            (Some(v), Some(b)) if *m != Model::BlackScholes => {
+                                let d = v - b;
+                                let color = if d.abs() < 1e-2 { GOOD } else { ACCENT_TEXT };
+                                ui.monospace(
+                                    egui::RichText::new(format!("{:+.4}", d)).color(color),
+                                );
+                            }
+                            (Some(_), Some(_)) => {
+                                ui.weak("reference");
+                            }
+                            _ => {
+                                ui.weak("—");
+                            }
+                        };
+                        ui.end_row();
+                    }
+                });
+        });
+
+        section(ui, "Timing", |ui| {
+            egui::Grid::new("compare_timing")
+                .num_columns(2)
+                .spacing([24.0, 4.0])
+                .show(ui, |ui| {
+                    for (m, _p, ms) in &rows {
+                        ui.label(model_label(*m));
+                        ui.monospace(format!("{:.3} ms", ms));
+                        ui.end_row();
+                    }
+                });
+            ui.add_space(2.0);
+            ui.weak(
+                "Wall-clock per single call (binomial 512 steps, Monte Carlo \
+                 200k paths, FD 400×400 grid). Indicative, not a benchmark — the \
+                 bench/ harness measures properly.",
+            );
+        });
+
+        // Bar-style price comparison: a marker per model at its price.
+        let pts: Vec<[f64; 2]> = rows
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (_m, p, _))| p.map(|v| [i as f64, v]))
+            .collect();
+        if !pts.is_empty() {
+            Plot::new("compare_plot")
+                .x_axis_label("method (0=BS,1=Binomial,2=MC,3=FD)")
+                .y_axis_label("price")
+                .height(220.0)
+                .show(ui, |plot_ui| {
+                    plot_ui.points(
+                        Points::new(PlotPoints::from(pts))
+                            .radius(5.0_f32)
+                            .color(ACCENT)
+                            .name("price"),
+                    );
+                    // Reference line at the Black-Scholes value.
+                    if let Some(b) = bs {
+                        plot_ui.line(
+                            Line::new(PlotPoints::from(vec![[0.0, b], [3.0, b]]))
+                                .color(ACCENT_TEXT)
+                                .name("Black-Scholes"),
+                        );
+                    }
+                });
         }
     }
 
     fn portfolio_tab(&mut self, ui: &mut egui::Ui) {
         ui.label(
             "Shared market: spot, rate, vol, dividend from the Single tab. \
-                  Each row is a call/put at its own strike, same maturity.",
+             Each row is a call/put at its own strike, same maturity.",
         );
-        self.input_controls(ui);
-        ui.separator();
-
-        ui.horizontal(|ui| {
-            if ui.button("Reprice all").clicked() {
-                self.reprice_book();
-            }
-            if ui.button("Add strike").clicked() {
-                let next = self.book_strikes.last().copied().unwrap_or(100.0) + 5.0;
-                self.book_strikes.push(next);
-            }
-            if let Some(ms) = self.last_reprice_ms {
-                ui.weak(format!(
-                    "{} instruments in {:.2} ms (threaded)",
-                    self.book_strikes.len(),
-                    ms
-                ));
-            }
-        });
         ui.add_space(6.0);
 
-        if !self.status.is_empty() {
-            ui.colored_label(egui::Color32::LIGHT_RED, &self.status);
-        }
+        section(ui, "Market & contract", |ui| {
+            self.input_controls(ui);
+        });
 
-        egui::Grid::new("book")
-            .num_columns(2)
-            .striped(true)
-            .show(ui, |ui| {
-                ui.strong("Strike");
-                ui.strong("Price");
-                ui.end_row();
-                for (i, k) in self.book_strikes.iter().enumerate() {
-                    ui.monospace(format!("{:.2}", k));
-                    match self.book_prices.get(i) {
-                        Some(p) => ui.monospace(format!("{:.4}", p)),
-                        None => ui.weak("—"),
-                    };
-                    ui.end_row();
+        section(ui, "Book", |ui| {
+            ui.horizontal(|ui| {
+                if ui
+                    .button(egui::RichText::new("Reprice all").strong())
+                    .clicked()
+                {
+                    self.reprice_book();
+                }
+                if ui.button("Add strike").clicked() {
+                    let next = self.book_strikes.last().copied().unwrap_or(100.0) + 5.0;
+                    self.book_strikes.push(next);
+                }
+                if self.book_strikes.len() > 1 && ui.button("Remove last").clicked() {
+                    self.book_strikes.pop();
+                    self.book_prices.pop();
+                }
+                if let Some(ms) = self.last_reprice_ms {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{} instruments · {:.2} ms (threaded)",
+                            self.book_strikes.len(),
+                            ms
+                        ))
+                        .color(ACCENT_TEXT),
+                    );
                 }
             });
+            ui.add_space(6.0);
+
+            if !self.status.is_empty() {
+                ui.colored_label(BAD, &self.status);
+            }
+
+            // Render the table inline (no nested scroll): the whole tab body is
+            // already inside the page-level vertical ScrollArea in update(), so
+            // the entire Portfolio tab scrolls as one — controls included — just
+            // like the Single tab. A nested scroll here would trap the wheel.
+            egui::Grid::new("book")
+                .num_columns(2)
+                .striped(true)
+                .min_col_width(120.0)
+                .show(ui, |ui| {
+                    ui.strong("Strike");
+                    ui.strong("Price");
+                    ui.end_row();
+                    for (i, k) in self.book_strikes.iter().enumerate() {
+                        ui.monospace(format!("{:.2}", k));
+                        match self.book_prices.get(i) {
+                            Some(p) => ui.monospace(format!("{:.4}", p)),
+                            None => ui.weak("—"),
+                        };
+                        ui.end_row();
+                    }
+                });
+        });
     }
 
     fn convergence_tab(&mut self, ui: &mut egui::Ui) {
@@ -585,14 +988,18 @@ impl App {
             ui.label("Model:");
             ui.selectable_value(&mut self.conv_model, Model::Binomial, "Binomial");
             ui.selectable_value(&mut self.conv_model, Model::MonteCarlo, "Monte Carlo");
-            if ui.button("Compute").clicked() {
+            ui.selectable_value(&mut self.conv_model, Model::FiniteDiff, "Finite diff");
+            if ui
+                .button(egui::RichText::new("Compute").strong())
+                .clicked()
+            {
                 self.recompute_convergence();
             }
         });
         ui.separator();
 
         if !self.status.is_empty() {
-            ui.colored_label(egui::Color32::LIGHT_RED, &self.status);
+            ui.colored_label(BAD, &self.status);
         }
         if self.conv_series.is_empty() {
             ui.weak("Press Compute to plot the convergence series.");
@@ -736,6 +1143,179 @@ impl App {
         ui.weak(format!("spot {:.2}  ·  as of {}", spot, self.smile_asof));
     }
 
+    fn calibration_tab(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            "Fit a Gatheral SVI smile to the implied-vol points from the Vol \
+             smile tab. The fitted curve is the smooth, arbitrage-aware surface \
+             the engine prices off.",
+        );
+        ui.add_space(6.0);
+
+        section(ui, "Fit", |ui| {
+            ui.horizontal(|ui| {
+                if ui
+                    .button(egui::RichText::new("Calibrate SVI").strong())
+                    .clicked()
+                {
+                    self.calibrate();
+                }
+                ui.weak(format!("{} smile points available", self.smile_points.len()));
+            });
+            if !self.calib_status.is_empty() {
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new(&self.calib_status).color(ACCENT_TEXT));
+            }
+        });
+
+        let Some(fit) = self.svi_fit else {
+            section(ui, "Parameters", |ui| {
+                ui.weak(
+                    "No fit yet. Open the Vol smile tab, compute a smile, then \
+                     press Calibrate SVI here.",
+                );
+            });
+            return;
+        };
+
+        section(ui, "SVI parameters", |ui| {
+            egui::Grid::new("svi_params")
+                .num_columns(2)
+                .spacing([24.0, 4.0])
+                .show(ui, |ui| {
+                    let names = ["a (level)", "b (slope)", "ρ (skew)", "m (shift)", "σ (curvature)"];
+                    for (n, v) in names.iter().zip(fit.params.iter()) {
+                        ui.label(*n);
+                        ui.monospace(format!("{:+.5}", v));
+                        ui.end_row();
+                    }
+                    ui.label("RMSE");
+                    ui.monospace(format!("{:.4e}", fit.rmse));
+                    ui.end_row();
+                });
+        });
+
+        // Plot: raw implied-vol points + the fitted SVI curve sampled densely.
+        let forward = self.svi_forward;
+        let maturity = self.maturity.max(1e-6);
+        let raw: PlotPoints = self.smile_points.iter().map(|p| [p[0], p[1]]).collect();
+
+        let mut fitted: Vec<[f64; 2]> = Vec::new();
+        if !self.smile_points.is_empty() {
+            let k_lo = self.smile_points.iter().map(|p| p[0]).fold(f64::INFINITY, f64::min);
+            let k_hi = self
+                .smile_points
+                .iter()
+                .map(|p| p[0])
+                .fold(f64::NEG_INFINITY, f64::max);
+            let n = 80;
+            for i in 0..=n {
+                let k = k_lo + (k_hi - k_lo) * (i as f64) / (n as f64);
+                if let Some(v) = fit.vol(k, forward, maturity) {
+                    fitted.push([k, v]);
+                }
+            }
+        }
+
+        Plot::new("svi_plot")
+            .legend(Legend::default())
+            .x_axis_label("strike")
+            .y_axis_label("implied vol")
+            .height(340.0)
+            .show(ui, |plot_ui| {
+                plot_ui.points(
+                    Points::new(raw)
+                        .radius(3.0_f32)
+                        .color(ACCENT_TEXT)
+                        .name("market IV"),
+                );
+                plot_ui.line(
+                    Line::new(PlotPoints::from(fitted))
+                        .color(ACCENT)
+                        .width(2.0)
+                        .name("fitted SVI"),
+                );
+            });
+        ui.weak(format!("forward {:.2} · maturity {:.2}y", forward, maturity));
+    }
+
+    fn risk_tab(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            "Reprice the Single-tab option under a set of market stress \
+             scenarios, concurrently on the engine's thread pool. P&L is versus \
+             the unstressed price.",
+        );
+        ui.add_space(6.0);
+
+        section(ui, "Scenario set", |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Model:");
+                ui.label(egui::RichText::new(model_label(self.model)).color(ACCENT_TEXT));
+                ui.separator();
+                ui.label("Vol shock:");
+                ui.add(
+                    egui::DragValue::new(&mut self.stress_vol_shock)
+                        .speed(0.01)
+                        .clamp_range(0.0..=1.0)
+                        .max_decimals(3),
+                );
+                if ui
+                    .button(egui::RichText::new("Run stress").strong())
+                    .clicked()
+                {
+                    self.run_stress();
+                }
+            });
+            if !self.risk_status.is_empty() {
+                ui.add_space(4.0);
+                ui.colored_label(BAD, &self.risk_status);
+            }
+        });
+
+        if self.stress_rows.is_empty() {
+            section(ui, "Results", |ui| {
+                ui.weak("Press Run stress to populate the scenario table.");
+            });
+            return;
+        }
+
+        section(ui, "Scenario P&L", |ui| {
+            egui::Grid::new("stress_table")
+                .num_columns(3)
+                .striped(true)
+                .min_col_width(110.0)
+                .show(ui, |ui| {
+                    ui.strong("Scenario");
+                    ui.strong("Price");
+                    ui.strong("P&L");
+                    ui.end_row();
+                    for row in &self.stress_rows {
+                        ui.label(&row.name);
+                        ui.monospace(format!("{:.4}", row.price));
+                        let color = if row.pnl >= 0.0 { GOOD } else { BAD };
+                        ui.monospace(
+                            egui::RichText::new(format!("{:+.4}", row.pnl)).color(color),
+                        );
+                        ui.end_row();
+                    }
+                });
+        });
+
+        // A simple P&L bar-style plot for quick visual scanning.
+        let bars: Vec<[f64; 2]> = self
+            .stress_rows
+            .iter()
+            .enumerate()
+            .map(|(i, r)| [i as f64, r.pnl])
+            .collect();
+        Plot::new("stress_plot")
+            .x_axis_label("scenario #")
+            .y_axis_label("P&L")
+            .height(220.0)
+            .show(ui, |plot_ui| {
+                plot_ui.line(Line::new(PlotPoints::from(bars)).color(ACCENT).width(2.0).name("P&L"));
+            });
+    }
+
     fn fixed_income_tab(&mut self, ui: &mut egui::Ui) {
         ui.label(
             "Analytic pricing for the non-option instruments: a fixed-coupon \
@@ -782,7 +1362,7 @@ impl App {
         );
         match bond_pv {
             Some(pv) => ui.strong(format!("Present value: {:.4}", pv)),
-            None => ui.colored_label(egui::Color32::LIGHT_RED, "invalid bond inputs"),
+            None => ui.colored_label(BAD, "invalid bond inputs"),
         };
 
         ui.add_space(12.0);
@@ -845,7 +1425,7 @@ impl App {
                 ui.weak(format!("fair forward rate: {:.6}", f));
             }
             _ => {
-                ui.colored_label(egui::Color32::LIGHT_RED, "invalid FX inputs");
+                ui.colored_label(BAD, "invalid FX inputs");
             }
         }
     }

@@ -70,10 +70,13 @@ tree below.
 
 | Tab | What it does |
 |-----|--------------|
-| **Single instrument** | Price one option three ways (Black-Scholes / binomial / Monte Carlo) and see its Greeks — both closed-form and exact (AD). The everyday calculator. |
-| **Portfolio** | Price a whole book of options at once (varying strikes) using a background thread pool. The **Reprice all** button shows how long the threaded run took. |
-| **Convergence** | A chart proving the numerical models (binomial, Monte Carlo) approach the exact Black-Scholes value as you give them more steps / paths. Great for *seeing* how the methods trade speed for accuracy. |
+| **Single instrument** | Price one option four ways (Black-Scholes / binomial / Monte Carlo / finite-difference PDE) and see its Greeks — both closed-form and exact (AD). The everyday calculator. With Monte Carlo, a **Deterministic** checkbox switches to a reproducible run whose price is identical regardless of thread count. |
+| **Compare** | Price the *same* option with **every** method side by side — Black-Scholes (the exact reference), binomial, Monte Carlo, and finite-difference — with each model's price, its difference from Black-Scholes, and how long the call took. The quickest way to *see* the models agree (and how they trade accuracy for flexibility). |
+| **Portfolio** | Price a whole book of options at once (varying strikes) using a background thread pool. The **Reprice all** button shows how long the threaded run took. The table scrolls, so long books stay in view. |
+| **Convergence** | A chart proving the numerical models (binomial, Monte Carlo, finite-difference) approach the exact Black-Scholes value as you give them more steps / paths / grid resolution. Great for *seeing* how the methods trade speed for accuracy. |
 | **Vol smile** | Work the engine **backwards**: take real market option prices, solve for the volatility each implies, and plot it against strike. The resulting "smile" is a real-world phenomenon textbook Black-Scholes can't produce. Needs market data (see the data section in the README). |
+| **Calibration** | Fit a smooth **SVI** volatility smile to the implied-vol points from the Vol smile tab, and overlay the fitted curve on the raw market points. Shows the five SVI parameters and the fit error (RMSE). |
+| **Risk** | Reprice the Single-tab option under a set of market **stress scenarios** (spot ±10/±20%, a vol shock, a crash combo) on the thread pool, and show each scenario's price and P&L versus the unstressed value. |
 | **Fixed income** | Price a fixed-coupon **bond** (present value of its coupons + principal) and an **FX forward** (a contract to exchange currency at a future date). |
 | **Exotics** | Price path-dependent options — **Asian**, **barrier**, **lookback** — by simulating many price paths in parallel. |
 
@@ -184,6 +187,22 @@ flexible: any payoff you can write as a function of the path can be priced this
 way — which is exactly how the **exotics** are handled. The simulation is split
 across threads (each with its own independent random stream), and the noise
 shrinks as you add paths (Convergence tab).
+
+By default each Monte Carlo run draws fresh randomness, so prices wobble slightly
+run to run. Tick **Deterministic** (Single tab, Monte Carlo model) to switch to a
+counter-based generator whose draws are a fixed function of the path index: the
+price is then exactly reproducible *and* identical at any thread count — useful
+when you need a number you can reproduce or compare across machines.
+
+### Finite-difference PDE (Crank–Nicolson)
+
+**Solves the Black-Scholes partial differential equation directly** on a grid of
+prices and time steps, marching backward from expiry to today. It's the workhorse
+for American options and a precise cross-check on the others: as you refine the
+grid (Convergence tab) it converges to the closed-form Black-Scholes value. This
+is a *one-dimensional* solver (one underlying); see `plan.md` §16.8 for why the
+finite-element / finite-volume cousins only earn their keep on two-dimensional
+problems like stochastic-volatility or basket options.
 
 ### Implied volatility & the smile (Vol smile tab)
 

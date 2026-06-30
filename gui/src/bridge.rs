@@ -13,6 +13,7 @@ pub enum Model {
     BlackScholes = 0,
     Binomial = 1,
     MonteCarlo = 2,
+    FiniteDiff = 3,
 }
 
 /// Call or put. Matches `MapeOptionType`.
@@ -229,6 +230,57 @@ mod ffi {
             out_prices: *mut c_double,
         ) -> i32;
 
+        pub fn mape_price_mc_deterministic(
+            engine: *mut MapeEngine,
+            ty: i32,
+            spot: c_double,
+            strike: c_double,
+            rate: c_double,
+            vol: c_double,
+            maturity: c_double,
+            dividend: c_double,
+            paths: usize,
+            threads: usize,
+            key: usize,
+        ) -> c_double;
+
+        pub fn mape_calibrate_svi(
+            engine: *mut MapeEngine,
+            strikes: *const c_double,
+            maturities: *const c_double,
+            implied_vols: *const c_double,
+            count: usize,
+            forward: c_double,
+            out_params: *mut c_double,
+            out_rmse: *mut c_double,
+            out_iterations: *mut i32,
+        ) -> i32;
+
+        pub fn mape_svi_vol(
+            params: *const c_double,
+            strike: c_double,
+            forward: c_double,
+            maturity: c_double,
+        ) -> c_double;
+
+        pub fn mape_run_stress(
+            engine: *mut MapeEngine,
+            model: i32,
+            ty: i32,
+            exercise: i32,
+            spot: c_double,
+            strike: c_double,
+            rate: c_double,
+            vol: c_double,
+            maturity: c_double,
+            dividend: c_double,
+            vol_shock: c_double,
+            out_prices: *mut c_double,
+            out_pnls: *mut c_double,
+        ) -> i32;
+
+        pub fn mape_stress_scenario_name(i: usize) -> *const c_char;
+
         pub fn mape_version() -> *const c_char;
     }
 }
@@ -268,6 +320,38 @@ pub struct Greeks {
     pub delta: f64,
     pub gamma: f64,
     pub vega: f64,
+}
+
+/// A fitted SVI volatility smile (Gatheral raw parameterisation) plus fit
+/// diagnostics. `params` are (a, b, rho, m, sigma).
+#[derive(Copy, Clone, Debug)]
+pub struct SviFit {
+    pub params: [f64; 5],
+    pub rmse: f64,
+    pub iterations: i32,
+}
+
+impl SviFit {
+    /// Implied vol of the fitted smile at strike `k`, for forward `f` and
+    /// maturity `t`. Returns `None` on invalid input.
+    pub fn vol(&self, k: f64, f: f64, t: f64) -> Option<f64> {
+        // SAFETY: params points to 5 valid doubles; the call is pure.
+        let v = unsafe { ffi::mape_svi_vol(self.params.as_ptr(), k, f, t) };
+        if v.is_nan() {
+            None
+        } else {
+            Some(v)
+        }
+    }
+}
+
+/// One row of a stress-scenario run: a named market shock with its repriced
+/// value and P&L versus the base market.
+#[derive(Clone, Debug)]
+pub struct StressRow {
+    pub name: String,
+    pub price: f64,
+    pub pnl: f64,
 }
 
 /// Safe owner of a C pricing engine.
@@ -594,6 +678,143 @@ impl Engine {
         } else {
             Some(v)
         }
+    }
+
+    /// Deterministic parallel Monte Carlo (counter-based RNG). The price is a
+    /// pure function of `key` and `paths`, so it is bit-identical regardless of
+    /// `threads` (0 = all hardware threads). European payoff only. Returns
+    /// `None` on invalid input.
+    #[allow(clippy::too_many_arguments)]
+    pub fn price_mc_deterministic(
+        &self,
+        ty: OptionType,
+        q: Quote,
+        paths: usize,
+        threads: usize,
+        key: u64,
+    ) -> Option<f64> {
+        // SAFETY: valid handle; scalar args; side-effect free.
+        let v = unsafe {
+            ffi::mape_price_mc_deterministic(
+                self.handle,
+                ty as i32,
+                q.spot,
+                q.strike,
+                q.rate,
+                q.vol,
+                q.maturity,
+                q.dividend,
+                paths,
+                threads,
+                key as usize,
+            )
+        };
+        if v.is_nan() {
+            None
+        } else {
+            Some(v)
+        }
+    }
+
+    /// Fit an SVI volatility smile to `(strike, maturity, implied_vol)` quotes
+    /// at the given `forward`. Returns the fitted params + diagnostics, or
+    /// `None` if the C side rejected the inputs.
+    pub fn calibrate_svi(
+        &self,
+        strikes: &[f64],
+        maturities: &[f64],
+        implied_vols: &[f64],
+        forward: f64,
+    ) -> Option<SviFit> {
+        let count = strikes.len();
+        if count == 0 || maturities.len() != count || implied_vols.len() != count {
+            return None;
+        }
+        let mut params = [0.0_f64; 5];
+        let mut rmse = 0.0_f64;
+        let mut iterations = 0_i32;
+        // SAFETY: input arrays are valid for `count` reads; out_params has room
+        // for 5 doubles; rmse/iterations are valid single out-pointers.
+        let status = unsafe {
+            ffi::mape_calibrate_svi(
+                self.handle,
+                strikes.as_ptr(),
+                maturities.as_ptr(),
+                implied_vols.as_ptr(),
+                count,
+                forward,
+                params.as_mut_ptr(),
+                &mut rmse,
+                &mut iterations,
+            )
+        };
+        if status == 0 {
+            Some(SviFit {
+                params,
+                rmse,
+                iterations,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Reprice a European option under the built-in stress set, concurrently on
+    /// the thread pool. Returns one row per scenario (name, price, P&L vs. the
+    /// base market), or `None` on invalid input.
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_stress(
+        &self,
+        model: Model,
+        ty: OptionType,
+        exercise: Exercise,
+        q: Quote,
+        vol_shock: f64,
+    ) -> Option<Vec<StressRow>> {
+        const N: usize = 6; // MAPE_STRESS_COUNT
+        let mut prices = [0.0_f64; N];
+        let mut pnls = [0.0_f64; N];
+        // SAFETY: valid handle; out arrays each hold N doubles, matching
+        // MAPE_STRESS_COUNT on the C side.
+        let status = unsafe {
+            ffi::mape_run_stress(
+                self.handle,
+                model as i32,
+                ty as i32,
+                exercise as i32,
+                q.spot,
+                q.strike,
+                q.rate,
+                q.vol,
+                q.maturity,
+                q.dividend,
+                vol_shock,
+                prices.as_mut_ptr(),
+                pnls.as_mut_ptr(),
+            )
+        };
+        if status != 0 {
+            return None;
+        }
+        let mut rows = Vec::with_capacity(N);
+        for i in 0..N {
+            // SAFETY: i < N == MAPE_STRESS_COUNT, so the name pointer is valid
+            // and static; we copy it into an owned String.
+            let name = unsafe {
+                let ptr = ffi::mape_stress_scenario_name(i);
+                if ptr.is_null() {
+                    String::new()
+                } else {
+                    std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
+                }
+            };
+            rows.push(StressRow {
+                name,
+                price: prices[i],
+                pnl: pnls[i],
+            });
+        }
+        Some(rows)
     }
 }
 

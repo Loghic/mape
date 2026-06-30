@@ -31,7 +31,7 @@ plain scalars, enums, and pointers. No C++ type crosses the boundary.
   compile-time `Pricer<Model>` templates to the flat runtime API the GUI's model
   dropdown selects.
 - The C header and the Rust `extern "C"` block must stay in lockstep; CI runs
-  `scripts/check_abi_consistency.py` to enforce it (16 functions, matched by
+  `scripts/check_abi_consistency.py` to enforce it (21 functions, matched by
   name/arity/type).
 - Ownership is caller-managed (`mape_create`/`mape_destroy`); the Rust wrapper
   encodes this with `Drop` so it's leak- and double-free-safe from safe Rust.

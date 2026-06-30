@@ -93,7 +93,9 @@ prototyping mattered more than packaging.
   `models/finite_difference.hpp` — Crank-Nicolson on the Black-Scholes PDE
   (uniform spot grid, Thomas tridiagonal solve), European + American (early-
   exercise projection), satisfies `PricingModel`. Converges to Black-Scholes
-  (~1e-3 on a 400×400 grid). See `test_finite_difference`.
+  (~1e-3 on a 400×400 grid). See `test_finite_difference`. **Surfaced in the
+  GUI** as the "Finite difference (PDE)" model on the Single/Portfolio/
+  Convergence tabs (C ABI `MAPE_MODEL_FINITE_DIFF`).
 
 Each model implements the same conceptual contract so the engine can treat them
 uniformly (see §5.1).
@@ -510,7 +512,7 @@ stretch goals.
 > `{gcc-libstdc++, clang-libc++, appleclang/macOS}` matrix, runs TSan + ASan/UBSan
 > over the concurrency tests, and an `abi` job runs
 > `scripts/check_abi_consistency.py` (parses `mape_c_api.h` vs the `extern "C"`
-> block in `bridge.rs`; 16 functions must match).
+> block in `bridge.rs`; 21 functions must match).
 
 Gotchas #3 and #4 (libstdc++ pulling in headers libc++ doesn't; Clang stricter
 than g++) are exactly what CI catches for free. A pipeline that builds the core
@@ -747,7 +749,9 @@ so the core stays header-only.
 > `bootstrap_curve` recovers a `YieldCurve` from discount factors. Verified by
 > recovering a synthetic SVI smile to RMSE ~3e-6 and round-tripping a zero curve.
 > See `test_calibration`. (Short-rate model calibration remains out of scope, as
-> the plan notes — the engine has no such models yet.)
+> the plan notes — the engine has no such models yet.) **Surfaced in the GUI**
+> via the Calibration tab (C ABI `mape_calibrate_svi` / `mape_svi_vol`): it fits
+> the Vol-smile points and overlays the fitted SVI curve on the raw market IVs.
 
 Generalise the existing `implied_vol` (already single-point calibration) to fit
 many quotes at once — a least-squares
@@ -767,7 +771,9 @@ down on purpose: short-rate model calibration (Hull–White et al.) is out of v1
 > rho through the same engine, matching the analytic Greeks) and
 > `stress_scenarios` (large spot/vol shocks incl. a crash combo). Verified:
 > scenario reprice == manual, scenario Greeks ~ closed-form, parallel == serial,
-> clean under TSan. See `test_risk_scenarios`.
+> clean under TSan. See `test_risk_scenarios`. **Surfaced in the GUI** via the
+> Risk tab (C ABI `mape_run_stress` / `mape_stress_scenario_name`): runs the
+> stress set for the current option/model and shows a P&L table + chart.
 
 Perturb spot/rate/vol/`q`/FX, reprice, tabulate P&L —
 `run_scenarios(portfolio) -> table`. The same machinery serves portfolio
@@ -783,7 +789,10 @@ Bucketed/curve-based risk depends on §16.2, so sequence it after.
 > `monte_carlo_parallel_deterministic` in `threading/parallel_mc.hpp` reduces
 > over fixed-size blocks (not per-thread partials) so the float summation order
 > is also thread-count-independent. Result is **bit-identical** at 1/2/4/8
-> threads — verified in `test_deterministic_mc`, clean under TSan.
+> threads — verified in `test_deterministic_mc`, clean under TSan. **Surfaced in
+> the GUI** as a "Deterministic (reproducible across threads)" checkbox on the
+> Single tab when the Monte Carlo model is selected (C ABI
+> `mape_price_mc_deterministic`, with a thread-count control).
 
 
 Make a fixed seed produce identical prices at 1, 2, and 8 threads. Today the
