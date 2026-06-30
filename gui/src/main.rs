@@ -9,9 +9,7 @@
 mod bridge;
 mod data;
 
-use bridge::{
-    AdGreek, BarrierKind, Engine, Exercise, Exotic, Greeks, Model, OptionType, Quote,
-};
+use bridge::{AdGreek, BarrierKind, Engine, Exercise, Exotic, Greeks, Model, OptionType, Quote};
 use data::DataStore;
 use eframe::egui;
 use egui_plot::{Legend, Line, Plot, PlotPoints, Points};

@@ -50,6 +50,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cppcheck
 
+      # .cppcheck-suppressions silences `passedByValue` on the AD scalar types
+      # (Dual/Dual2) and bs_price_generic. These are tiny numeric value types
+      # (16B/24B) where pass-by-value is correct and faster than const-ref
+      # (register-passing, inlined chain-rule math) — like std::complex. The
+      # file is comment-free on purpose: older cppcheck builds reject `#`
+      # comments in a suppressions list ("Failed to add suppression. No id").
       - name: Run cppcheck
         run: >
           cppcheck
