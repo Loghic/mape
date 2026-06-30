@@ -10,6 +10,7 @@
 #include "mape/concepts.hpp"
 #include "mape/ct_math.hpp"
 #include "mape/exotic.hpp"
+#include "mape/generator.hpp"
 #include "mape/greeks_mixin.hpp"
 #include "mape/implied_vol.hpp"
 #include "mape/instruments.hpp"
@@ -22,9 +23,11 @@
 #include "mape/models/black_scholes_ad.hpp"
 #include "mape/models/binomial.hpp"
 #include "mape/models/fixed_income.hpp"
+#include "mape/models/lazy_monte_carlo.hpp"
 #include "mape/models/monte_carlo.hpp"
 #include "mape/models/path_monte_carlo.hpp"
 #include "mape/threading/parallel_mc.hpp"
+#include "mape/threading/sync_primitives.hpp"
 #include "mape/threading/thread_pool.hpp"
 
 #endif  // MAPE_MAPE_HPP

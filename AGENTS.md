@@ -17,12 +17,15 @@ documentation.
 ```
 core/        C++20 pricing engine (header-only). The "heart". Knows nothing
              about C, Rust, the GUI, or the database.
-  include/mape/   public headers: concepts, pricer, portfolio, instruments,
-                  market_data, autodiff (Dual/Dual2), ct_math, compile_time,
-                  implied_vol, exotic; models/ (black_scholes[_ad], binomial,
-                  monte_carlo, path_monte_carlo, fixed_income); threading/
-                  (thread_pool, parallel_mc). See docs/cpp-codemap.md.
-  tests/          dependency-free harnesses: test_main.cpp (runtime, 36 checks)
+  include/mape/   public headers: concepts, pricer, portfolio,
+                  portfolio_compile_time (variadic), instruments, market_data,
+                  autodiff (Dual/Dual2), ct_math, compile_time, implied_vol,
+                  exotic, variance_reduction, greeks_mixin (CRTP), generator
+                  (coroutine); models/ (black_scholes[_ad], binomial,
+                  monte_carlo, path_monte_carlo, lazy_monte_carlo,
+                  fixed_income); threading/ (thread_pool, parallel_mc,
+                  sync_primitives). See docs/cpp-codemap.md.
+  tests/          dependency-free harnesses: test_main.cpp (runtime, 50 checks)
                   and test_compile_time.cpp (static_asserts)
 ffi/         extern "C" wrapper -> libmape. The only surface Rust sees.
   include/mape_c_api.h   flat C API over an opaque handle (16 functions)
@@ -56,7 +59,7 @@ rm -rf build                 # see gotcha #1 — do this after any CMake change
 ./scripts/build_and_test.sh        # or: ./scripts/build_and_test.sh -v
 ```
 
-Expected: `36 checks, 0 failures` (core), `PASS` (compile-time tests), and
+Expected: `50 checks, 0 failures` (core), `PASS` (compile-time tests), and
 `PASS (failures: 0)` (C smoke).
 
 Quick verify without CMake (header-only core, sandbox-friendly):

@@ -14,23 +14,53 @@ concurrency:
 jobs:
   # --- C++ core + FFI: configure, build (warnings as errors), run ctest ----
   cpp:
-    name: C++ build + ctest
-    runs-on: ubuntu-latest
+    name: C++ build + ctest (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # g++ / libstdc++ on Linux.
+          - name: gcc-libstdc++
+            os: ubuntu-latest
+            cxx: g++
+            cxxflags: "-Werror"
+            apt: g++
+          # clang / libc++ on Linux — proxies AppleClang's libc++, which
+          # (gotcha #3) does NOT pull headers in transitively like libstdc++.
+          - name: clang-libc++
+            os: ubuntu-latest
+            cxx: clang++
+            cxxflags: "-Werror -stdlib=libc++"
+            apt: clang libc++-dev libc++abi-dev
+          # The real thing: AppleClang / libc++ on macOS.
+          - name: appleclang
+            os: macos-latest
+            cxx: clang++
+            cxxflags: "-Werror"
+            apt: ""
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install toolchain
+      - name: Install toolchain (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ ninja-build
+          sudo apt-get install -y cmake ninja-build ${{ matrix.apt }}
+
+      - name: Install toolchain (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cmake ninja
 
       - name: Configure
+        env:
+          CXX: ${{ matrix.cxx }}
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DMAPE_BUILD_TESTS=ON
           -DMAPE_ENABLE_WARNINGS=ON
-          -DCMAKE_CXX_FLAGS="-Werror"
+          -DCMAKE_CXX_FLAGS="${{ matrix.cxxflags }}"
 
       - name: Build
         run: cmake --build build -j
@@ -107,6 +137,15 @@ jobs:
 
       - name: Build
         run: cargo build --manifest-path gui/Cargo.toml --release
+
+  # --- ABI consistency: C header vs Rust extern "C" bindings --------------
+  abi:
+    name: ABI consistency (C header vs Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check mape_c_api.h against bridge.rs
+        run: python3 scripts/check_abi_consistency.py
 
   # --- Python data fetcher: lint with ruff via uv -------------------------
   python:

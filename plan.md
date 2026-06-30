@@ -496,6 +496,13 @@ stretch goals.
 
 ### 14.1 CI matrix (g++ + AppleClang, sanitizers, ABI check)
 
+> **Implemented.** `.github/workflows/ci.yml` builds the core+FFI across a
+> `{gcc-libstdc++, clang-libc++, appleclang/macOS}` matrix, runs TSan + ASan/UBSan
+> over the concurrency tests, and an `abi` job runs
+> `scripts/check_abi_consistency.py` (parses `mape_c_api.h` vs the `extern "C"`
+> block in `bridge.rs`; 16 functions must match).
+
+
 Gotchas #3 and #4 (libstdc++ pulling in headers libc++ doesn't; Clang stricter
 than g++) are exactly what CI catches for free. A pipeline that builds the core
 + FFI on **both g++ (libstdc++) and AppleClang (libc++)**, runs the test harness
@@ -615,6 +622,13 @@ engine always uses the most accurate Greek available, transparently to callers.
 
 ### 15.4 Lazy path generation — coroutine + STL iterator + ranges/views
 
+> **Implemented.** `generator<T>` (a C++20 coroutine with a standard input
+> iterator) in `generator.hpp`, and `mc_payoff_stream` / `monte_carlo_price_lazy`
+> in `models/lazy_monte_carlo.hpp` — yields discounted payoffs lazily in O(1)
+> memory, composes with range-for/views, and matches the eager engine exactly
+> for the same seed. See `test_lazy_monte_carlo`.
+
+
 One feature that lands three syllabus topics at once and fits Monte Carlo
 naturally. A **coroutine generator** yields per-path payoffs lazily and exposes
 a **standard-conforming input iterator**, so it composes with `<algorithm>` and
@@ -644,6 +658,13 @@ the templated core to the flat C API. Earns its place: it's the actual seam
 between the compile-time core and the runtime selection the GUI needs.
 
 ### 15.6 Concurrency primitives: latch, packaged_task, semaphore
+
+> **Implemented.** `std::packaged_task` already powers the `ThreadPool`
+> (`thread_pool.hpp`). `threading/sync_primitives.hpp` adds
+> `monte_carlo_parallel_synced` (a `std::latch` releases all workers together
+> for clean benchmark timing) and `run_bounded` (a `std::counting_semaphore`
+> caps in-flight tasks). See `test_sync_primitives`.
+
 
 Extends §5.2 with the remaining thread-block topics where they pull weight:
 - **`std::latch`** — a one-shot countdown to release all benchmark worker threads

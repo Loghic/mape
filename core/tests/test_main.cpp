@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <vector>
 
 #include "mape/mape.hpp"
@@ -451,6 +452,61 @@ static void test_variadic_portfolio() {
                1e-9, "straddle = call + put");
 }
 
+// --- 15. Lazy coroutine MC stream (§15.4) -------------------------------
+static void test_lazy_monte_carlo() {
+    std::printf("test_lazy_monte_carlo\n");
+    Option call = make_call();
+    MarketData mkt = make_market();
+    auto proc = GbmProcess::from_market(mkt, call.maturity);
+    double disc = std::exp(-mkt.rate * call.maturity);
+    const std::size_t n = 500'000;
+
+    // The lazy stream uses the same RNG sequence as the eager engine, so for
+    // the same seed the mean is bit-identical.
+    double eager = monte_carlo_price(proc, call.payoff(), n, disc, 7);
+    double lazy = monte_carlo_price_lazy(proc, call.payoff(), n, disc, 7);
+    CHECK_NEAR(lazy, eager, 1e-9, "lazy MC stream == eager MC (same draws)");
+
+    // The generator is a real input range: range-for consumes it lazily.
+    int count = 0;
+    double sum = 0.0;
+    for (double pay : mc_payoff_stream(proc, call.payoff(), 1000, disc, 1)) {
+        sum += pay;
+        ++count;
+    }
+    CHECK(count == 1000, "coroutine stream yields exactly N payoffs");
+}
+
+// --- 16. Sync primitives: latch + semaphore (§15.6) ---------------------
+static void test_sync_primitives() {
+    std::printf("test_sync_primitives\n");
+    Option call = make_call();
+    MarketData mkt = make_market();
+    auto proc = GbmProcess::from_market(mkt, call.maturity);
+    double disc = std::exp(-mkt.rate * call.maturity);
+    BlackScholes bs;
+    double exact = bs.price(call, mkt);
+
+    // Latch-synchronized parallel MC lands near the analytic price.
+    double synced = monte_carlo_parallel_synced(proc, call.payoff(), 2'000'000,
+                                                disc, 4, 7);
+    CHECK_NEAR(synced, exact, 5e-2, "latch-synced parallel MC near analytic");
+
+    // Semaphore-bounded job runner: cap in-flight tasks, results still correct
+    // and in order.
+    std::vector<std::function<double()>> jobs;
+    jobs.reserve(50);
+    for (int i = 0; i < 50; ++i) {
+        jobs.push_back([i] { return static_cast<double>(i * i); });
+    }
+    auto results = run_bounded(jobs, 4);  // at most 4 concurrent
+    bool ok = results.size() == jobs.size();
+    for (int i = 0; i < 50 && ok; ++i) {
+        if (results[i] != static_cast<double>(i * i)) ok = false;
+    }
+    CHECK(ok, "semaphore-bounded runner returns correct, ordered results");
+}
+
 int main() {
     test_black_scholes_reference();
     test_greeks();
@@ -466,6 +522,8 @@ int main() {
     test_variance_reduction();
     test_crtp_greeks();
     test_variadic_portfolio();
+    test_lazy_monte_carlo();
+    test_sync_primitives();
 
     std::printf("\n%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

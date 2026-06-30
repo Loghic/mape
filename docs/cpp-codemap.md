@@ -18,21 +18,27 @@ core/include/mape/
 ├── concepts.hpp                PricingModel, Payoff, StochasticProcess, PathPayoff
 ├── pricer.hpp                  Pricer<Model> — the generic engine
 ├── portfolio.hpp               price_portfolio() over a thread pool
+├── portfolio_compile_time.hpp  Portfolio<Legs...> — variadic, fold over pack
 ├── autodiff.hpp                Dual, Dual2 — forward-mode AD scalars
 ├── ct_math.hpp                 constexpr sqrt/exp/log/erfc + CtDouble
 ├── compile_time.hpp            constexpr Black-Scholes, consteval validator
 ├── implied_vol.hpp             implied_vol() — invert BS for vol
 ├── exotic.hpp                  Asian/barrier/lookback PathPayoffs
+├── variance_reduction.hpp      control-variate MC (antithetic in monte_carlo.hpp)
+├── greeks_mixin.hpp            BumpGreeks<Model> CRTP + HasAnalyticDelta/best_delta
+├── generator.hpp               generator<T> — C++20 coroutine input range
 ├── models/
 │   ├── black_scholes.hpp       BlackScholes (closed form + Greeks)
 │   ├── black_scholes_ad.hpp    bs_price_generic<T> + BlackScholesAD
 │   ├── binomial.hpp            BinomialTree (CRR, American)
-│   ├── monte_carlo.hpp         MonteCarlo + GbmProcess + monte_carlo_price
+│   ├── monte_carlo.hpp         MonteCarlo + GbmProcess + monte_carlo_price[_antithetic]
 │   ├── path_monte_carlo.hpp    GbmPathGenerator + monte_carlo_path_price
+│   ├── lazy_monte_carlo.hpp    mc_payoff_stream — lazy coroutine MC
 │   └── fixed_income.hpp        price_bond, price_fx_forward, fx_forward_rate
 └── threading/
-    ├── thread_pool.hpp         ThreadPool (workers + queue)
-    └── parallel_mc.hpp         monte_carlo_parallel, monte_carlo_path_parallel
+    ├── thread_pool.hpp         ThreadPool (workers + queue, packaged_task)
+    ├── parallel_mc.hpp         monte_carlo_parallel, monte_carlo_path_parallel
+    └── sync_primitives.hpp     latch-synced MC, semaphore-bounded run_bounded
 
 ffi/
 ├── include/mape_c_api.h        the flat C ABI (opaque handle + functions)
@@ -40,7 +46,7 @@ ffi/
 └── tests/c_smoke_test.c        pure-C consumer test
 
 core/tests/
-├── test_main.cpp               runtime test harness (36 checks)
+├── test_main.cpp               runtime test harness (50 checks)
 └── test_compile_time.cpp       compile-time (static_assert) tests
 ```
 
