@@ -5,6 +5,8 @@ build_mape_tests
 # Benchmark output
 results.csv
 *.bench.csv
+/bench/results/
+build_mape_bench
 
 # Editor compilation database (symlinked from build/)
 /compile_commands.json
@@ -12,6 +14,7 @@ results.csv
 # Loose test binaries from direct g++/clang builds
 /mape_tests
 /mape_tsan
+/build_mape_ct_tests
 *.dSYM/
 *.o
 *.a
