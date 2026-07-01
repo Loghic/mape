@@ -18,13 +18,12 @@ use eframe::egui;
 use egui_plot::{Legend, Line, Plot, PlotBounds, PlotPoints, Points};
 use std::path::PathBuf;
 
-/// Palette. Two roles, deliberately split so text stays readable on the dark
-/// theme while plot fills can stay saturated:
-///   - `ACCENT`      — saturated brand blue, for plot lines/fills and the active
-///                     tab selection (sits on dark backgrounds as a *fill*).
-///   - `ACCENT_TEXT` — a much lighter blue used only for *text* (section titles,
-///                     headings, the price). The old dim blue (#60A5FA) was too
-///                     low-contrast on the ~#202020 panel; this is near-pastel.
+/// Palette, split into two roles so text stays readable on the dark theme while
+/// plot fills can stay saturated. `ACCENT` is the saturated brand blue used for
+/// plot lines/fills and the active tab selection (it sits on dark backgrounds as
+/// a fill). `ACCENT_TEXT` is a much lighter blue used only for text — section
+/// titles, headings, the price — because the old dim blue (#60A5FA) was too
+/// low-contrast on the ~#202020 panel; this near-pastel tone reads clearly.
 const ACCENT: egui::Color32 = egui::Color32::from_rgb(0x3B, 0x82, 0xF6);
 const ACCENT_TEXT: egui::Color32 = egui::Color32::from_rgb(0x9E, 0xC5, 0xFF);
 const HEADING: egui::Color32 = egui::Color32::from_rgb(0xE8, 0xF0, 0xFF);
