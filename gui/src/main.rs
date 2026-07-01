@@ -15,7 +15,7 @@ use bridge::{
 };
 use data::DataStore;
 use eframe::egui;
-use egui_plot::{Legend, Line, Plot, PlotPoints, Points};
+use egui_plot::{Legend, Line, Plot, PlotBounds, PlotPoints, Points};
 use std::path::PathBuf;
 
 /// Palette. Two roles, deliberately split so text stays readable on the dark
@@ -108,6 +108,68 @@ fn configure_style(ctx: &egui::Context) {
     .into();
 
     ctx.set_style(style);
+}
+
+/// A one-shot action for a plot's view, chosen from the toolbar buttons and
+/// applied inside the plot's closure on the next frame.
+#[derive(Copy, Clone, PartialEq)]
+enum PlotAction {
+    None,
+    Fit,
+    ZoomIn,
+    ZoomOut,
+}
+
+/// Draw a small toolbar of view controls above a plot and return the action the
+/// user clicked (if any). "Fit all" and "Reset" both re-fit to the data; zoom
+/// buttons scale the current view about its center. Dragging and scroll-zoom
+/// still work as usual — these are just discoverable buttons for people who
+/// don't know the mouse gestures.
+fn plot_controls(ui: &mut egui::Ui) -> PlotAction {
+    let mut action = PlotAction::None;
+    ui.horizontal(|ui| {
+        if ui.button("Fit all").clicked() {
+            action = PlotAction::Fit;
+        }
+        if ui.button("Zoom in").clicked() {
+            action = PlotAction::ZoomIn;
+        }
+        if ui.button("Zoom out").clicked() {
+            action = PlotAction::ZoomOut;
+        }
+        if ui.button("Reset").clicked() {
+            action = PlotAction::Fit;
+        }
+        ui.weak("· drag to pan, scroll to zoom");
+    });
+    action
+}
+
+/// Apply a `PlotAction` from inside a plot's closure. Fit re-enables auto
+/// bounds; zoom rescales the current bounds about their center by `factor`
+/// (>1 zooms in, <1 zooms out). Implemented with the stable `plot_bounds` /
+/// `set_plot_bounds` / `set_auto_bounds` API so it doesn't depend on the exact
+/// zoom-helper method names, which have moved across egui_plot versions.
+fn apply_plot_action(plot_ui: &mut egui_plot::PlotUi, action: PlotAction) {
+    let factor = match action {
+        PlotAction::None => return,
+        PlotAction::Fit => {
+            plot_ui.set_auto_bounds([true, true].into());
+            return;
+        }
+        PlotAction::ZoomIn => 1.0 / 1.3,
+        PlotAction::ZoomOut => 1.3,
+    };
+    let bounds = plot_ui.plot_bounds();
+    let (min, max) = (bounds.min(), bounds.max());
+    let cx = (min[0] + max[0]) * 0.5;
+    let cy = (min[1] + max[1]) * 0.5;
+    let hx = (max[0] - min[0]) * 0.5 * factor;
+    let hy = (max[1] - min[1]) * 0.5 * factor;
+    plot_ui.set_plot_bounds(PlotBounds::from_min_max(
+        [cx - hx, cy - hy],
+        [cx + hx, cy + hy],
+    ));
 }
 
 /// Human-friendly model name for the combo box (nicer than the Debug spelling).
@@ -748,55 +810,55 @@ impl App {
         match self.price {
             Some(p) => {
                 section(ui, "Result", |ui| {
-                ui.label(
-                    egui::RichText::new(format!("Price  {:.4}", p))
-                        .heading()
-                        .color(HEADING),
-                );
-                ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(format!("Price  {:.4}", p))
+                            .heading()
+                            .color(HEADING),
+                    );
+                    ui.add_space(6.0);
 
-                // Exact Greeks via automatic differentiation (dual numbers),
-                // shown beside the closed-form values as a cross-check.
-                let q = self.quote();
-                let fmt = |o: Option<f64>| match o {
-                    Some(v) => format!("{:.4}", v),
-                    None => "—".to_string(),
-                };
-                let ad_delta = self.engine.ad_greek(AdGreek::Delta, self.opt_type, q);
-                let ad_gamma = self.engine.ad_greek(AdGreek::Gamma, self.opt_type, q);
-                let ad_vega = self.engine.ad_greek(AdGreek::Vega, self.opt_type, q);
-                let ad_rho = self.engine.ad_greek(AdGreek::Rho, self.opt_type, q);
+                    // Exact Greeks via automatic differentiation (dual numbers),
+                    // shown beside the closed-form values as a cross-check.
+                    let q = self.quote();
+                    let fmt = |o: Option<f64>| match o {
+                        Some(v) => format!("{:.4}", v),
+                        None => "—".to_string(),
+                    };
+                    let ad_delta = self.engine.ad_greek(AdGreek::Delta, self.opt_type, q);
+                    let ad_gamma = self.engine.ad_greek(AdGreek::Gamma, self.opt_type, q);
+                    let ad_vega = self.engine.ad_greek(AdGreek::Vega, self.opt_type, q);
+                    let ad_rho = self.engine.ad_greek(AdGreek::Rho, self.opt_type, q);
 
-                egui::Grid::new("greeks")
-                    .num_columns(3)
-                    .spacing([16.0, 4.0])
-                    .show(ui, |ui| {
-                        ui.strong("Greek");
-                        ui.strong("closed-form");
-                        ui.strong("AD (exact)");
-                        ui.end_row();
-                        ui.label("Delta");
-                        ui.label(format!("{:.4}", self.greeks.delta));
-                        ui.label(fmt(ad_delta));
-                        ui.end_row();
-                        ui.label("Gamma");
-                        ui.label(format!("{:.4}", self.greeks.gamma));
-                        ui.label(fmt(ad_gamma));
-                        ui.end_row();
-                        ui.label("Vega");
-                        ui.label(format!("{:.4}", self.greeks.vega));
-                        ui.label(fmt(ad_vega));
-                        ui.end_row();
-                        ui.label("Rho");
-                        ui.weak("—");
-                        ui.label(fmt(ad_rho));
-                        ui.end_row();
-                    });
-                ui.add_space(4.0);
-                ui.weak(
-                    "Closed-form Greeks are Black-Scholes, European-style. AD \
+                    egui::Grid::new("greeks")
+                        .num_columns(3)
+                        .spacing([16.0, 4.0])
+                        .show(ui, |ui| {
+                            ui.strong("Greek");
+                            ui.strong("closed-form");
+                            ui.strong("AD (exact)");
+                            ui.end_row();
+                            ui.label("Delta");
+                            ui.label(format!("{:.4}", self.greeks.delta));
+                            ui.label(fmt(ad_delta));
+                            ui.end_row();
+                            ui.label("Gamma");
+                            ui.label(format!("{:.4}", self.greeks.gamma));
+                            ui.label(fmt(ad_gamma));
+                            ui.end_row();
+                            ui.label("Vega");
+                            ui.label(format!("{:.4}", self.greeks.vega));
+                            ui.label(fmt(ad_vega));
+                            ui.end_row();
+                            ui.label("Rho");
+                            ui.weak("—");
+                            ui.label(fmt(ad_rho));
+                            ui.end_row();
+                        });
+                    ui.add_space(4.0);
+                    ui.weak(
+                        "Closed-form Greeks are Black-Scholes, European-style. AD \
                      Greeks are exact (forward-mode dual numbers).",
-                );
+                    );
                 });
             }
             None => {
@@ -873,7 +935,9 @@ impl App {
                         // Highlight the baseline row.
                         if *m == baseline {
                             ui.label(
-                                egui::RichText::new(model_label(*m)).color(ACCENT_TEXT).strong(),
+                                egui::RichText::new(model_label(*m))
+                                    .color(ACCENT_TEXT)
+                                    .strong(),
                             );
                         } else {
                             ui.label(model_label(*m));
@@ -929,11 +993,13 @@ impl App {
             .filter_map(|(i, (_m, p, _))| p.map(|v| [i as f64, v]))
             .collect();
         if !pts.is_empty() {
+            let action = plot_controls(ui);
             Plot::new("compare_plot")
                 .x_axis_label("method (0=BS, 1=Binomial, 2=MC, 3=FD)")
                 .y_axis_label("price")
                 .height(220.0)
                 .show(ui, |plot_ui| {
+                    apply_plot_action(plot_ui, action);
                     plot_ui.points(
                         Points::new(PlotPoints::from(pts))
                             .radius(5.0_f32)
@@ -1007,7 +1073,10 @@ impl App {
                 });
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                if ui.button(egui::RichText::new("Generate ladder").strong()).clicked() {
+                if ui
+                    .button(egui::RichText::new("Generate ladder").strong())
+                    .clicked()
+                {
                     self.rebuild_book();
                 }
                 if ui.button("Add row").clicked() {
@@ -1024,7 +1093,10 @@ impl App {
 
         section(ui, "Book", |ui| {
             ui.horizontal(|ui| {
-                if ui.button(egui::RichText::new("Reprice all").strong()).clicked() {
+                if ui
+                    .button(egui::RichText::new("Reprice all").strong())
+                    .clicked()
+                {
                     self.reprice_book();
                 }
                 if let Some(ms) = self.last_reprice_ms {
@@ -1111,12 +1183,14 @@ impl App {
         let x_max = self.conv_series.last().map(|p| p[0]).unwrap_or(1.0);
         let ref_points: PlotPoints = vec![[x_min, reference], [x_max, reference]].into();
 
+        let action = plot_controls(ui);
         Plot::new("convergence_plot")
             .legend(Legend::default())
             .x_axis_label("sample size")
             .y_axis_label("price")
             .height(360.0)
             .show(ui, |plot_ui| {
+                apply_plot_action(plot_ui, action);
                 plot_ui.line(Line::new(model_points).name(format!("{:?}", self.conv_model)));
                 plot_ui.line(Line::new(ref_points).name("Black-Scholes"));
             });
@@ -1211,12 +1285,14 @@ impl App {
         let line_points: PlotPoints = self.smile_points.iter().map(|p| [p[0], p[1]]).collect();
         let spot = self.smile_spot;
 
+        let action = plot_controls(ui);
         Plot::new("smile_plot")
             .legend(Legend::default())
             .x_axis_label("strike")
             .y_axis_label("implied vol")
             .height(360.0)
             .show(ui, |plot_ui| {
+                apply_plot_action(plot_ui, action);
                 plot_ui.line(Line::new(line_points).name("implied vol"));
                 plot_ui.points(Points::new(points).radius(3.0_f32).name("strikes"));
                 // Vertical marker at spot (ATM) helps read the smile.
@@ -1251,7 +1327,10 @@ impl App {
 
         section(ui, "Fit", |ui| {
             ui.horizontal(|ui| {
-                if ui.button(egui::RichText::new("Calibrate SVI").strong()).clicked() {
+                if ui
+                    .button(egui::RichText::new("Calibrate SVI").strong())
+                    .clicked()
+                {
                     self.calibrate();
                 }
                 ui.weak(format!(
@@ -1324,12 +1403,14 @@ impl App {
             }
         }
 
+        let action = plot_controls(ui);
         Plot::new("svi_plot")
             .legend(Legend::default())
             .x_axis_label("strike")
             .y_axis_label("implied vol")
             .height(340.0)
             .show(ui, |plot_ui| {
+                apply_plot_action(plot_ui, action);
                 plot_ui.points(
                     Points::new(raw)
                         .radius(3.0_f32)
@@ -1369,7 +1450,10 @@ impl App {
                         .clamp_range(0.0..=1.0)
                         .max_decimals(3),
                 );
-                if ui.button(egui::RichText::new("Run stress").strong()).clicked() {
+                if ui
+                    .button(egui::RichText::new("Run stress").strong())
+                    .clicked()
+                {
                     self.run_stress();
                 }
             });
@@ -1413,11 +1497,13 @@ impl App {
             .enumerate()
             .map(|(i, r)| [i as f64, r.pnl])
             .collect();
+        let action = plot_controls(ui);
         Plot::new("stress_plot")
             .x_axis_label("scenario #")
             .y_axis_label("P&L")
             .height(220.0)
             .show(ui, |plot_ui| {
+                apply_plot_action(plot_ui, action);
                 plot_ui.line(
                     Line::new(PlotPoints::from(bars))
                         .color(ACCENT)
